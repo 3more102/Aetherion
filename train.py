@@ -36,10 +36,52 @@ def load_data(train_path: str, val_path: str | None):
              "explicit_validation_file": val_path is not None})
 
 
+
+def load_bpe_data(train_path: str, val_path: str | None, tokenizer_path: str):
+    """Load token IDs only from prepared splits matching a verified BPE artifact."""
+    import json
+    from aetherion.tokenizer_runtime import load_verified_tokenizer
+
+    if val_path is None:
+        raise ValueError("BPE training requires --val-data (separate validation.txt)")
+    train_file, val_file = Path(train_path).resolve(), Path(val_path).resolve()
+    if (train_file.parent != val_file.parent or
+            train_file.name != "train.txt" or val_file.name != "validation.txt"):
+        raise ValueError("BPE training requires prepared train.txt and validation.txt in one directory")
+    manifest_bytes = (train_file.parent / "manifest.json").read_bytes()
+    manifest = json.loads(manifest_bytes)
+    if manifest.get("schema_version") != 1:
+        raise ValueError("Unsupported prepared-data manifest schema")
+    for name, path in (("train.txt", train_file), ("validation.txt", val_file)):
+        expected = manifest.get("outputs_sha256", {}).get(name)
+        if expected is None or sha256(path.read_bytes()).hexdigest() != expected:
+            raise ValueError(f"Prepared dataset checksum mismatch: {name}")
+    tokenizer, metadata = load_verified_tokenizer(tokenizer_path)
+    if (metadata.get("manifest_sha256") != sha256(manifest_bytes).hexdigest()
+            or metadata.get("train_sha256") !=
+            manifest.get("outputs_sha256", {}).get("train.jsonl")):
+        raise ValueError("Tokenizer was fitted on a different prepared training dataset")
+    train_raw, val_raw = train_file.read_bytes(), val_file.read_bytes()
+    train_ids = tokenizer.encode(train_raw.decode("utf-8"), add_special_tokens=False).ids
+    val_ids = tokenizer.encode(val_raw.decode("utf-8"), add_special_tokens=False).ids
+    hashes = {
+        "train_sha256": sha256(train_raw).hexdigest(),
+        "validation_sha256": sha256(val_raw).hexdigest(),
+        "explicit_validation_file": True,
+        "tokenizer_type": "bpe",
+        "tokenizer_sha256": metadata["tokenizer_sha256"],
+        "tokenizer_vocab_size": tokenizer.get_vocab_size(),
+        "prepared_manifest_sha256": metadata["manifest_sha256"],
+    }
+    return (torch.tensor(train_ids, dtype=torch.long),
+            torch.tensor(val_ids, dtype=torch.long), hashes, tokenizer.get_vocab_size())
+
+
 def main():
     parser = argparse.ArgumentParser(description="Aetherion Micro training")
     parser.add_argument("--data", default="data/demo.txt")
     parser.add_argument("--val-data", default=None, help="Separate validation text from prepare_data.py")
+    parser.add_argument("--tokenizer", default=None, help="Verified BPE tokenizer.json (requires prepared train/validation)")
     parser.add_argument("--steps", type=int, default=200, help="Total training steps, including any resumed steps")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--block-size", type=int, default=128)
@@ -61,11 +103,15 @@ def main():
 
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
-    train, val, hashes = load_data(args.data, args.val_data)
+    if args.tokenizer:
+        train, val, hashes, vocab_size = load_bpe_data(args.data, args.val_data, args.tokenizer)
+    else:
+        train, val, hashes = load_data(args.data, args.val_data)
+        vocab_size = 256
     if min(len(train), len(val)) < args.block_size + 2:
-        raise ValueError("Train and validation data must each contain at least block_size+2 UTF-8 bytes")
+        raise ValueError("Train and validation data must each contain at least block_size+2 tokens")
 
-    cfg = ModelConfig(block_size=args.block_size, d_model=args.d_model,
+    cfg = ModelConfig(vocab_size=vocab_size, block_size=args.block_size, d_model=args.d_model,
                       n_layers=args.layers, n_heads=args.heads)
     model = Aetherion(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
