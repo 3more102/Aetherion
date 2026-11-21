@@ -26,9 +26,12 @@ pip install -r requirements.txt
 pytest -q
 python train.py --steps 5 --batch-size 2 --d-model 32 --layers 2 --heads 4 --block-size 32
 python generate.py --prompt "Hello" --tokens 30
+python evaluate.py --checkpoint checkpoints/demo.pt --data data/demo.txt --output reports/micro-eval.json
 ```
 
-The sample corpus is synthetic demonstration text, not sufficient to build a chat assistant. Training a strong model from scratch requires vastly more data and compute.
+The sample corpus is synthetic demonstration text, not sufficient to build a chat assistant.
+
+**Evaluation note:** `evaluate.py` reports deterministic next-byte loss and byte-level perplexity over the demo's last 10% of bytes, plus input/checkpoint checksums. This is a software smoke metric, **not** a document-disjoint benchmark or evidence of model quality. Training a strong model from scratch requires vastly more data and compute.
 
 ## Architecture
 
@@ -39,6 +42,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 ## Documentation
 
 - [Engineering roadmap](docs/ROADMAP.md)
+- [Execution plan and measurable milestones](docs/EXECUTION_PLAN.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Dataset and evaluation policy](docs/DATA_AND_EVALUATION.md)
 
