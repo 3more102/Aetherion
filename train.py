@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output", default="checkpoints/demo.pt")
+    parser.add_argument("--resume", help="Resume from a checkpoint; --steps is the final total step")
     args = parser.parse_args()
     if args.steps < 1 or args.batch_size < 1 or args.eval_every < 1:
         parser.error("--steps, --batch-size, and --eval-every must be >= 1")
@@ -75,15 +76,50 @@ def main():
           f"tokenizer={'bpe' if tokenizer else 'byte'} "
           f"train_tokens={len(train)} val_tokens={len(val)}")
 
-    def get_batch(split: torch.Tensor):
-        starts = torch.randint(0, len(split) - cfg.block_size, (args.batch_size,))
+    # Validation never consumes the training batch RNG stream.
+    train_rng = torch.Generator().manual_seed(args.seed + 1)
+    val_rng = torch.Generator().manual_seed(args.seed + 2)
+
+    def get_batch(split: torch.Tensor, generator: torch.Generator):
+        starts = torch.randint(0, len(split) - cfg.block_size,
+                               (args.batch_size,), generator=generator)
         x = torch.stack([split[i:i + cfg.block_size] for i in starts])
         y = torch.stack([split[i + 1:i + cfg.block_size + 1] for i in starts])
         return x.to(device), y.to(device)
 
-    for step in range(1, args.steps + 1):
+    first_step = 1
+    if args.resume:
+        saved = torch.load(args.resume, map_location="cpu", weights_only=True)
+        if "optimizer_state_dict" not in saved or "rng_state" not in saved:
+            raise ValueError("Checkpoint lacks optimizer/RNG state; cannot resume legacy weights")
+        if saved["config"] != asdict(cfg):
+            raise ValueError("Model config mismatch when resuming")
+        if (saved.get("tokenizer_sha256") != tokenizer_hash or
+                saved.get("data_sha256") != train_hash or
+                saved.get("val_data_sha256") != val_hash):
+            raise ValueError("Tokenizer or data hash mismatch when resuming")
+        if (saved.get("seed") != args.seed or
+                saved.get("batch_size") != args.batch_size or
+                saved.get("lr") != args.lr):
+            raise ValueError("Training seed, batch size or learning rate changed")
+        model.load_state_dict(saved["state_dict"])
+        optimizer.load_state_dict(saved["optimizer_state_dict"])
+        torch.set_rng_state(saved["rng_state"]["torch_cpu"])
+        train_rng.set_state(saved["rng_state"]["train_batches"])
+        val_rng.set_state(saved["rng_state"]["validation_batches"])
+        if str(device).startswith("cuda"):
+            cuda_state = saved["rng_state"].get("cuda")
+            if not cuda_state:
+                raise ValueError("Checkpoint lacks CUDA RNG state")
+            torch.cuda.set_rng_state_all(cuda_state)
+        first_step = int(saved["step"]) + 1
+        if first_step > args.steps:
+            raise ValueError("--steps must exceed the checkpoint step when resuming")
+        print(f"resumed_from={args.resume} next_step={first_step}")
+
+    for step in range(first_step, args.steps + 1):
         model.train()
-        x, y = get_batch(train)
+        x, y = get_batch(train, train_rng)
         _, loss = model(x, y)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -92,7 +128,7 @@ def main():
         if step == 1 or step % args.eval_every == 0 or step == args.steps:
             model.eval()
             with torch.inference_mode():
-                vx, vy = get_batch(val)
+                vx, vy = get_batch(val, val_rng)
                 _, val_loss = model(vx, vy)
             print(f"step={step:4d} train_loss={loss.item():.3f} val_loss={val_loss.item():.3f}")
 
@@ -102,7 +138,15 @@ def main():
                 "step": args.steps, "seed": args.seed,
                 "tokenizer_sha256": tokenizer_hash,
                 "data_sha256": train_hash, "val_data_sha256": val_hash,
-                "train_tokens": len(train), "val_tokens": len(val)}, output)
+                "train_tokens": len(train), "val_tokens": len(val),
+                "batch_size": args.batch_size, "lr": args.lr,
+                "optimizer_state_dict": optimizer.state_dict(),
+                "rng_state": {
+                    "torch_cpu": torch.get_rng_state(),
+                    "train_batches": train_rng.get_state(),
+                    "validation_batches": val_rng.get_state(),
+                    "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+                }}, output)
     print(f"saved_checkpoint={output}")
 
 
