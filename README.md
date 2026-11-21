@@ -48,7 +48,15 @@ python -m aetherion.tokenizer --train data/processed/v1/train.jsonl \
   --output artifacts/tokenizer.json --vocab-size 32000
 ```
 
-The tokenizer and its metadata record SHA-256 checksums, a pinned library version and special tokens. See [Tokenizer guide](docs/TOKENIZER.md). **It is not yet wired into the Micro trainer or generator.** Their checkpoints still use raw byte IDs.
+The tokenizer and its metadata record SHA-256 checksums, a pinned library version and special tokens. See [Tokenizer guide](docs/TOKENIZER.md). **It is now supported by the Micro trainer and generator** through a verified tokenizer artifact. Legacy byte-level checkpoints remain compatible.
+
+```bash
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt \
+  --tokenizer artifacts/tokenizer.json --steps 100 --output checkpoints/bpe-micro.pt
+python generate.py --checkpoint checkpoints/bpe-micro.pt --tokenizer artifacts/tokenizer.json --prompt "Hello مرحبا" --tokens 20
+```
+
+Checkpoints store the tokenizer fingerprint and support exact optimizer/RNG resume via `--resume`.
 
 ## Architecture
 
