@@ -97,7 +97,8 @@ def main():
         optimizer.step()
         if step == 1 or step % args.eval_every == 0 or step == args.steps:
             model.eval()
-            with torch.inference_mode():
+            # Validation must not advance the training minibatch RNG stream.
+            with torch.random.fork_rng(devices=[]), torch.inference_mode():
                 vx, vy = get_batch(val)
                 _, val_loss = model(vx, vy)
             print(f"step={step:4d} train_loss={loss.item():.3f} val_loss={val_loss.item():.3f}")
