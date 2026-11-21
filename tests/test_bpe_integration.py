@@ -39,6 +39,11 @@ def test_byte_mode_is_backward_compatible_and_separate_val_is_enforced(tmp_path)
     args.val_data = str(train_path)
     with pytest.raises(ValueError, match="different files"):
         load_training_data(args)
+    metadata_path = tmp_path / "bad-validation.jsonl"
+    metadata_path.write_text('{"text": "metadata"}\\n', encoding="utf-8")
+    args.val_data = str(metadata_path)
+    with pytest.raises(ValueError, match="JSONL input requires"):
+        load_training_data(args)
 
 
 def test_bpe_preparation_training_generation_and_hash_guard(tmp_path):
