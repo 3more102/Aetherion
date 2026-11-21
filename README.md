@@ -45,7 +45,16 @@ python -m aetherion.data --input data/raw/corpus.jsonl --output-dir data/process
 python -m aetherion.tokenizer --train data/processed/train.jsonl --output artifacts/tokenizer.json --vocab-size 32000
 ```
 
-Outputs include train/validation/test JSONL splits and a SHA-256 manifest, plus a serialized ByteLevel BPE tokenizer. The experiment does **not** yet integrate BPE token IDs into `train.py` or `generate.py`: those continue to use UTF-8 bytes.
+Outputs include train/validation/test JSONL splits and a SHA-256 manifest, plus a serialized ByteLevel BPE tokenizer. BPE token IDs are supported by `train.py` and `generate.py` in the M2 implementation. Legacy UTF-8 byte mode remains supported.
+
+Train and generate with the same tokenizer artifact:
+
+```bash
+python train.py --data data/processed/train.jsonl --val-data data/processed/validation.jsonl --tokenizer artifacts/tokenizer.json --steps 100 --output checkpoints/bpe-micro.pt
+python generate.py --checkpoint checkpoints/bpe-micro.pt --tokenizer artifacts/tokenizer.json --prompt "Hello مرحبا" --tokens 30
+```
+
+The trainer checks separate input files, appends EOS between encoded documents, and records SHA-256 hashes of both data splits and the tokenizer in the checkpoint. Generation rejects mismatched tokenizer bytes. Validation loss here is a sampled engineering sanity check, **not** a language-quality benchmark or a full held-out evaluation.
 
 **Important limitations:** only exact normalized-text deduplication is performed. Near-duplicate removal, PII/secret scanning, actual license verification, and evaluation-set contamination screening must be completed before real model training. Data labels alone do not prove permission. No private or unlicensed corpora should be committed.
 
