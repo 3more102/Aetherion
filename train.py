@@ -1,11 +1,11 @@
 """Train Aetherion Micro from UTF-8 bytes (educational starter)."""
 import argparse
-from dataclasses import asdict
 from hashlib import sha256
 from pathlib import Path
 
 import torch
 from aetherion import Aetherion, ModelConfig
+from aetherion.checkpoint import load_training_checkpoint, save_training_checkpoint
 
 
 def resolve_device(name: str) -> str:
@@ -50,9 +50,13 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output", default="checkpoints/demo.pt")
+    parser.add_argument("--resume", default=None, help="Resumable checkpoint from the same data/configuration")
+    parser.add_argument("--save-every", type=int, default=0, help="Checkpoint interval in steps (0=final only)")
     args = parser.parse_args()
     if args.steps < 1 or args.batch_size < 1 or args.eval_every < 1:
         parser.error("--steps, --batch-size, and --eval-every must be >= 1")
+    if args.save_every < 0:
+        parser.error("--save-every must be >= 0")
 
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
@@ -64,6 +68,16 @@ def main():
                       n_layers=args.layers, n_heads=args.heads)
     model = Aetherion(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
+    training = {"batch_size": args.batch_size, "eval_every": args.eval_every, "lr": args.lr}
+    start_step = 0
+    if args.resume:
+        start_step = load_training_checkpoint(
+            args.resume, model=model, optimizer=optimizer, config=cfg,
+            seed=args.seed, data=hashes, training=training, device=device,
+        )
+        if args.steps <= start_step:
+            parser.error(f"--steps must exceed checkpoint step {start_step} (total target steps)")
+        print(f"resumed_checkpoint={args.resume} at_step={start_step}")
     print(f"device={device} parameters={sum(p.numel() for p in model.parameters()):,}")
 
     def get_batch(split: torch.Tensor):
@@ -72,7 +86,8 @@ def main():
         y = torch.stack([split[i + 1:i + cfg.block_size + 1] for i in starts])
         return x.to(device), y.to(device)
 
-    for step in range(1, args.steps + 1):
+    output = Path(args.output)
+    for step in range(start_step + 1, args.steps + 1):
         model.train()
         x, y = get_batch(train)
         _, loss = model(x, y)
@@ -86,11 +101,11 @@ def main():
                 vx, vy = get_batch(val)
                 _, val_loss = model(vx, vy)
             print(f"step={step:4d} train_loss={loss.item():.3f} val_loss={val_loss.item():.3f}")
-
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"config": asdict(cfg), "state_dict": model.state_dict(),
-                "step": args.steps, "seed": args.seed, "data": hashes}, output)
+        if step == args.steps or (args.save_every and step % args.save_every == 0):
+            save_training_checkpoint(
+                output, model=model, optimizer=optimizer, config=cfg, step=step,
+                seed=args.seed, data=hashes, training=training, device=device,
+            )
     print(f"saved_checkpoint={output}")
 
 
