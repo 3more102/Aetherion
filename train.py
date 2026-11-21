@@ -118,6 +118,10 @@ def main():
         "config": asdict(cfg), "state_dict": model.state_dict(),
         "step": args.steps, "seed": args.seed,
         "tokenizer": metadata["tokenizer"], "dataset": metadata["dataset"],
+        "tokenizer_sha256": metadata["tokenizer"].get("sha256"),
+        "data_sha256": metadata["dataset"]["train_sha256"],
+        "val_data_sha256": metadata["dataset"]["validation_sha256"],
+        "train_tokens": len(train), "val_tokens": len(val),
     }, output)
     print(f"saved_checkpoint={output}")
 
