@@ -1,7 +1,9 @@
 """Train Aetherion Micro from UTF-8 bytes (educational starter)."""
 import argparse
 from dataclasses import asdict
+from hashlib import sha256
 from pathlib import Path
+
 import torch
 from aetherion import Aetherion, ModelConfig
 
@@ -16,9 +18,27 @@ def resolve_device(name: str) -> str:
     return "cpu"
 
 
+def load_data(train_path: str, val_path: str | None):
+    """Read distinct prepared files when provided; preserve demo fallback."""
+    train_bytes = Path(train_path).read_bytes()
+    if val_path is None:
+        cutoff = int(0.9 * len(train_bytes))
+        print("WARNING: using a raw 90/10 byte split for demo only; use --val-data for real experiments")
+        train_bytes, val_bytes = train_bytes[:cutoff], train_bytes[cutoff:]
+    else:
+        val_bytes = Path(val_path).read_bytes()
+    train_sha = sha256(train_bytes).hexdigest()
+    val_sha = sha256(val_bytes).hexdigest()
+    return (torch.tensor(list(train_bytes), dtype=torch.long),
+            torch.tensor(list(val_bytes), dtype=torch.long),
+            {"train_sha256": train_sha, "validation_sha256": val_sha,
+             "explicit_validation_file": val_path is not None})
+
+
 def main():
     parser = argparse.ArgumentParser(description="Aetherion Micro training")
     parser.add_argument("--data", default="data/demo.txt")
+    parser.add_argument("--val-data", default=None, help="Separate validation text from prepare_data.py")
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--block-size", type=int, default=128)
@@ -36,11 +56,9 @@ def main():
 
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
-    data = torch.tensor(list(Path(args.data).read_bytes()), dtype=torch.long)
-    cutoff = int(0.9 * len(data))
-    train, val = data[:cutoff], data[cutoff:]
+    train, val, hashes = load_data(args.data, args.val_data)
     if min(len(train), len(val)) < args.block_size + 2:
-        raise ValueError("Provide at least block_size+2 bytes in the held-out 10% split")
+        raise ValueError("Train and validation data must each contain at least block_size+2 UTF-8 bytes")
 
     cfg = ModelConfig(block_size=args.block_size, d_model=args.d_model,
                       n_layers=args.layers, n_heads=args.heads)
@@ -72,7 +90,7 @@ def main():
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"config": asdict(cfg), "state_dict": model.state_dict(),
-                "step": args.steps, "seed": args.seed}, output)
+                "step": args.steps, "seed": args.seed, "data": hashes}, output)
     print(f"saved_checkpoint={output}")
 
 
