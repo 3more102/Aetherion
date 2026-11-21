@@ -30,7 +30,7 @@ python generate.py --prompt "Hello" --tokens 30
 
 The sample corpus is synthetic demonstration text, not sufficient to build a chat assistant. Training a strong model from scratch requires vastly more data and compute.
 
-## Reproducible dataset preparation (new)
+## Reproducible dataset preparation
 
 Provide **your own authorized**, source-identified JSONL documents (schema in [Data pipeline](docs/DATA_PIPELINE.md)). The preparer creates separate train/validation/test files, exact-deduplication reports, and SHA-256 manifests. Dataset licenses, privacy and near-duplicates still require independent review.
 
@@ -38,6 +38,17 @@ Provide **your own authorized**, source-identified JSONL documents (schema in [D
 python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
+
+## Resume training
+
+A complete training checkpoint stores model weights, AdamW state, RNG state, corpus fingerprints and configuration. The `--steps` value is the **total** number of optimization steps, including completed steps.
+
+```bash
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --save-every 25 --output checkpoints/micro.pt
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 200 --save-every 25 --resume checkpoints/micro.pt --output checkpoints/micro.pt
+```
+
+All model and training settings must match when resuming. The same data and device type are required. For flags and tested reproducibility limits, see [Resumable Micro training](docs/RESUMABLE_TRAINING.md).
 
 ## Architecture
 
@@ -48,6 +59,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 ## Documentation
 
 - [Eight-week execution plan (priorities, exit gates, risks)](docs/EXECUTION_PLAN.md)
+- [Resumable Micro training](docs/RESUMABLE_TRAINING.md)
 - [Engineering roadmap](docs/ROADMAP.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Data preparation and split manifest](docs/DATA_PIPELINE.md)
