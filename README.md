@@ -28,6 +28,17 @@ python train.py --steps 5 --batch-size 2 --d-model 32 --layers 2 --heads 4 --blo
 python generate.py --prompt "Hello" --tokens 30
 ```
 
+## Resume a Micro training run
+
+`--steps` is the **total target step**, not the number of additional steps. To resume, provide the same architecture, tokenizer, train/validation files, batch size, learning rate and seed:
+
+```bash
+python train.py --steps 5 --batch-size 2 --block-size 32 --d-model 32 --layers 2 --heads 4 --output checkpoints/micro.pt
+python train.py --steps 10 --batch-size 2 --block-size 32 --d-model 32 --layers 2 --heads 4 --resume checkpoints/micro.pt --output checkpoints/micro.pt
+```
+
+New checkpoints store optimizer and random-number generator states, so the CPU continuation can reproduce an uninterrupted run. Validation has an independent sampler. Resuming a legacy weight-only checkpoint is rejected. GPU bit-for-bit reproducibility across hardware, drivers and PyTorch versions is not guaranteed. Checkpoints are currently written at **run completion**, not periodically, so interrupt protection requires separately completed runs.
+
 The sample corpus is synthetic demonstration text, not sufficient to build a chat assistant. Training a strong model from scratch requires vastly more data and compute.
 
 ## M1: experimental corpus and BPE tokenizer
