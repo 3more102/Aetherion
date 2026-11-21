@@ -39,6 +39,32 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
+## Resume a Micro training run
+
+Use total-step semantics: `--steps` is the **final global optimizer step**, not
+the number of additional steps. Checkpoints now include AdamW state, CPU/CUDA RNG
+state, deterministic batch-sampling state, and SHA-256 identities of the training
+and validation bytes. An atomic replacement avoids partial checkpoint writes.
+
+```bash
+python train.py --data data/demo.txt --steps 20 --batch-size 2 --d-model 32 \
+  --layers 2 --heads 4 --block-size 32 --save-every 5 \
+  --output checkpoints/resumable.pt
+python train.py --data data/demo.txt --steps 40 --batch-size 2 --d-model 32 \
+  --layers 2 --heads 4 --block-size 32 --save-every 5 \
+  --resume checkpoints/resumable.pt --output checkpoints/resumable.pt
+```
+
+Keep the model, batch size, learning rate, seed, and datasets identical on
+resume; only the final step, evaluation cadence, checkpoint interval, device
+(when compatible), and output path may differ. Older model-only checkpoints
+remain usable by `generate.py`, but cannot resume optimizer training.
+
+Exact interrupted/uninterrupted equivalence is tested on CPU. GPU/MPS
+bitwise reproducibility is not guaranteed across platforms, kernel versions,
+or nondeterministic operations. The synthetic demo corpus is for plumbing
+checks only, not meaningful model evaluation.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
