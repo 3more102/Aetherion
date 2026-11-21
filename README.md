@@ -39,6 +39,17 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
+## Experimental BPE tokenizer (M1)
+
+After preparing a licensed/authorized corpus, fit a byte-level BPE tokenizer on **only** the verified training split:
+
+```bash
+python -m aetherion.tokenizer --train data/processed/v1/train.jsonl \
+  --output artifacts/tokenizer.json --vocab-size 32000
+```
+
+The tokenizer and its metadata record SHA-256 checksums, a pinned library version and special tokens. See [Tokenizer guide](docs/TOKENIZER.md). **It is not yet wired into the Micro trainer or generator.** Their checkpoints still use raw byte IDs.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
