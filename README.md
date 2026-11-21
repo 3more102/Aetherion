@@ -39,6 +39,19 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
+## Aetherion Tokenizer v1 — Byte-level BPE
+
+Train a reversible BPE tokenizer from checksum-verified, authorized training documents. The output contains `tokenizer.json` and a SHA-256 provenance manifest. A target 32K vocabulary requires sufficient varied training text; tiny examples produce smaller vocabularies.
+
+```bash
+python prepare_data.py data/raw/authorized.jsonl --output-dir data/processed/v1
+python train_tokenizer.py --data-dir data/processed/v1 --output-dir artifacts/tokenizer-v1 --vocab-size 32000
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --tokenizer-dir artifacts/tokenizer-v1 --steps 100 --output checkpoints/bpe-micro.pt
+python generate.py --checkpoint checkpoints/bpe-micro.pt --tokenizer-dir artifacts/tokenizer-v1 --prompt "Hello مرحبا" --tokens 20
+```
+
+See [Tokenizer workflow and limitations](docs/TOKENIZER.md). BPE training requires an authorized prepared dataset; the demo corpus is not suitable for production pretraining.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
@@ -51,6 +64,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 - [Engineering roadmap](docs/ROADMAP.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Data preparation and split manifest](docs/DATA_PIPELINE.md)
+- [BPE tokenizer and checkpoint consistency](docs/TOKENIZER.md)
 - [Dataset and evaluation policy](docs/DATA_AND_EVALUATION.md)
 
 ## Principles
