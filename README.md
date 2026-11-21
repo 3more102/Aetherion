@@ -39,15 +39,16 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
-## Model architecture inspection
+## Experimental BPE tokenizer (M1)
 
-The proposed **Aetherion-125M** architecture has exactly **123,688,704 trainable parameters** with tied input/output embeddings. Inspect it on the PyTorch `meta` device without allocating the full weights:
+After preparing a licensed/authorized corpus, fit a byte-level BPE tokenizer on **only** the verified training split:
 
 ```bash
-python inspect_model.py --preset aetherion-125m --weight-dtype bf16
+python -m aetherion.tokenizer --train data/processed/v1/train.jsonl \
+  --output artifacts/tokenizer.json --vocab-size 32000
 ```
 
-See [model presets and parameter audit](docs/MODEL_PRESETS.md). Parameter count is not a claim of pretrained capabilities, GPU fit, or measured performance.
+The tokenizer and its metadata record SHA-256 checksums, a pinned library version and special tokens. See [Tokenizer guide](docs/TOKENIZER.md). **It is not yet wired into the Micro trainer or generator.** Their checkpoints still use raw byte IDs.
 
 ## Architecture
 
@@ -59,7 +60,6 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 
 - [Eight-week execution plan (priorities, exit gates, risks)](docs/EXECUTION_PLAN.md)
 - [Engineering roadmap](docs/ROADMAP.md)
-- [Model presets and exact parameter audit](docs/MODEL_PRESETS.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Data preparation and split manifest](docs/DATA_PIPELINE.md)
 - [Dataset and evaluation policy](docs/DATA_AND_EVALUATION.md)
