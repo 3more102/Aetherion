@@ -27,7 +27,9 @@ def load_training_data(args):
         train, val, metadata = load_bpe_splits(args.data, args.val_data, args.tokenizer)
         return train, val, metadata["tokenizer"]["vocab_size"], metadata
 
-    if Path(args.data).suffix == ".jsonl":
+    if Path(args.data).suffix.lower() == ".jsonl" or (
+        args.val_data and Path(args.val_data).suffix.lower() == ".jsonl"
+    ):
         raise ValueError("JSONL input requires --tokenizer and --val-data")
     raw = torch.tensor(list(Path(args.data).read_bytes()), dtype=torch.long)
     if args.val_data:
