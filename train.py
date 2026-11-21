@@ -1,9 +1,10 @@
-"""Train Aetherion Micro from UTF-8 bytes (educational starter)."""
+"""Train Aetherion Micro on UTF-8 bytes or prepared BPE token IDs."""
 import argparse
 from dataclasses import asdict
 from pathlib import Path
 import torch
 from aetherion import Aetherion, ModelConfig
+from aetherion.token_stream import file_sha256, load_token_stream
 
 
 def resolve_device(name: str) -> str:
@@ -19,6 +20,8 @@ def resolve_device(name: str) -> str:
 def main():
     parser = argparse.ArgumentParser(description="Aetherion Micro training")
     parser.add_argument("--data", default="data/demo.txt")
+    parser.add_argument("--val-data", help="Independent held-out text/JSONL; required with --tokenizer")
+    parser.add_argument("--tokenizer", help="Trained ByteLevel BPE tokenizer.json; omit for legacy bytes")
     parser.add_argument("--steps", type=int, default=200)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--block-size", type=int, default=128)
@@ -33,20 +36,44 @@ def main():
     args = parser.parse_args()
     if args.steps < 1 or args.batch_size < 1 or args.eval_every < 1:
         parser.error("--steps, --batch-size, and --eval-every must be >= 1")
+    if args.tokenizer and not args.val_data:
+        parser.error("--tokenizer requires independent --val-data")
+    if args.val_data and Path(args.data).resolve() == Path(args.val_data).resolve():
+        parser.error("--data and --val-data must differ")
+
+    tokenizer = None
+    tokenizer_hash = None
+    vocab_size = 256
+    if args.tokenizer:
+        from tokenizers import Tokenizer
+        tokenizer = Tokenizer.from_file(args.tokenizer)
+        tokenizer_hash = file_sha256(args.tokenizer)
+        vocab_size = tokenizer.get_vocab_size()
 
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
-    data = torch.tensor(list(Path(args.data).read_bytes()), dtype=torch.long)
-    cutoff = int(0.9 * len(data))
-    train, val = data[:cutoff], data[cutoff:]
+    train_hash = file_sha256(args.data)
+    data = torch.tensor(load_token_stream(args.data, tokenizer), dtype=torch.long)
+    if args.val_data:
+        val_hash = file_sha256(args.val_data)
+        if train_hash == val_hash:
+            raise ValueError("Train/validation data are identical")
+        train = data
+        val = torch.tensor(load_token_stream(args.val_data, tokenizer), dtype=torch.long)
+    else:
+        cutoff = int(0.9 * len(data))
+        train, val = data[:cutoff], data[cutoff:]
+        val_hash = None
     if min(len(train), len(val)) < args.block_size + 2:
-        raise ValueError("Provide at least block_size+2 bytes in the held-out 10% split")
+        raise ValueError("Train and validation splits each need at least block_size+2 tokens")
 
-    cfg = ModelConfig(block_size=args.block_size, d_model=args.d_model,
-                      n_layers=args.layers, n_heads=args.heads)
+    cfg = ModelConfig(vocab_size=vocab_size, block_size=args.block_size,
+                      d_model=args.d_model, n_layers=args.layers, n_heads=args.heads)
     model = Aetherion(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
-    print(f"device={device} parameters={sum(p.numel() for p in model.parameters()):,}")
+    print(f"device={device} parameters={sum(p.numel() for p in model.parameters()):,} "
+          f"tokenizer={'bpe' if tokenizer else 'byte'} "
+          f"train_tokens={len(train)} val_tokens={len(val)}")
 
     def get_batch(split: torch.Tensor):
         starts = torch.randint(0, len(split) - cfg.block_size, (args.batch_size,))
@@ -72,7 +99,10 @@ def main():
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"config": asdict(cfg), "state_dict": model.state_dict(),
-                "step": args.steps, "seed": args.seed}, output)
+                "step": args.steps, "seed": args.seed,
+                "tokenizer_sha256": tokenizer_hash,
+                "data_sha256": train_hash, "val_data_sha256": val_hash,
+                "train_tokens": len(train), "val_tokens": len(val)}, output)
     print(f"saved_checkpoint={output}")
 
 
