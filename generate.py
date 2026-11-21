@@ -10,7 +10,10 @@ from train import resolve_device
 
 def encode_prompt(prompt: str, checkpoint: dict, tokenizer_path: str | None):
     """Encode with the checkpoint's recorded tokenizer, never a silent fallback."""
-    info = checkpoint.get("tokenizer") or {"mode": "byte"}
+    info = checkpoint.get("tokenizer")
+    if not info:
+        legacy_hash = checkpoint.get("tokenizer_sha256")
+        info = {"mode": "bpe", "sha256": legacy_hash} if legacy_hash else {"mode": "byte"}
     mode = info.get("mode", "byte")
     if mode == "byte":
         if tokenizer_path:
@@ -21,7 +24,7 @@ def encode_prompt(prompt: str, checkpoint: dict, tokenizer_path: str | None):
     if not tokenizer_path:
         raise ValueError("BPE checkpoint requires --tokenizer")
     if sha256_file(tokenizer_path) != info.get("sha256"):
-        raise ValueError("Tokenizer checksum does not match checkpoint")
+        raise ValueError("Tokenizer SHA-256 mismatch with checkpoint")
     from tokenizers import Tokenizer
     tokenizer = Tokenizer.from_file(tokenizer_path)
     if tokenizer.get_vocab_size() != checkpoint["config"]["vocab_size"]:
