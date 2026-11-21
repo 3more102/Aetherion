@@ -98,7 +98,7 @@ def test_bpe_preparation_training_generation_and_hash_guard(tmp_path):
     # Appending insignificant JSON whitespace changes bytes but not validity.
     tokenizer_path.write_text(tokenizer_path.read_text(encoding="utf-8") + "\n",
                               encoding="utf-8")
-    with pytest.raises(ValueError, match="checksum does not match checkpoint"):
+    with pytest.raises(ValueError, match="SHA-256 mismatch"):
         encode_prompt("Hello", checkpoint, str(tokenizer_path))
 
 
