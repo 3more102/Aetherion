@@ -30,6 +30,25 @@ python generate.py --prompt "Hello" --tokens 30
 
 The sample corpus is synthetic demonstration text, not sufficient to build a chat assistant. Training a strong model from scratch requires vastly more data and compute.
 
+## M1: experimental corpus and BPE tokenizer
+
+Provide a UTF-8 JSONL file with one document per line, with required string fields `id`, `text`, `source`, and `license`. Optional fields: `language` and `group_id` (for keeping related documents in the same split). For example, a **test-only** record:
+
+```json
+{"id":"sample-001","text":"Hello, مرحبا!","source":"local test fixture","license":"test-only","language":"mixed","group_id":"fixture-1"}
+```
+
+Run preparation and tokenizer training:
+
+```bash
+python -m aetherion.data --input data/raw/corpus.jsonl --output-dir data/processed --seed 42
+python -m aetherion.tokenizer --train data/processed/train.jsonl --output artifacts/tokenizer.json --vocab-size 32000
+```
+
+Outputs include train/validation/test JSONL splits and a SHA-256 manifest, plus a serialized ByteLevel BPE tokenizer. The experiment does **not** yet integrate BPE token IDs into `train.py` or `generate.py`: those continue to use UTF-8 bytes.
+
+**Important limitations:** only exact normalized-text deduplication is performed. Near-duplicate removal, PII/secret scanning, actual license verification, and evaluation-set contamination screening must be completed before real model training. Data labels alone do not prove permission. No private or unlicensed corpora should be committed.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
@@ -38,6 +57,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 
 ## Documentation
 
+- [Detailed execution plan](docs/EXECUTION_PLAN.md)
 - [Engineering roadmap](docs/ROADMAP.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Dataset and evaluation policy](docs/DATA_AND_EVALUATION.md)
