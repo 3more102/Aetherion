@@ -39,6 +39,17 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
+## Resumable Micro training
+
+Checkpoint version 2 records model weights, AdamW optimizer state, train-batch RNG, CPU/device RNG, completed steps and dataset checksums. The saved checkpoint remains compatible with `generate.py`.
+
+```bash
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 200 --save-every 50 --output checkpoints/run.pt
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 400 --resume checkpoints/run.pt
+```
+
+The resumed `--steps` value is the **new total**, not an additional step count. Keep the same model configuration, batch size, learning rate, seed, device type and dataset content. Changed dataset hashes are rejected. For non-default model flags, pass the original values when resuming. Legacy inference-only checkpoints cannot be resumed. Exact CPU resume is tested; cross-device bitwise identity is not guaranteed.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
