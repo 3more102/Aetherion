@@ -70,3 +70,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 ## License
 
 MIT (source code). Datasets and later model weights require independent licensing decisions.
+
+## Resumable Micro training
+
+After the initial training run, restart from an optimizer/RNG checkpoint with `--resume` and a larger total `--steps` value. See [the resume guide](docs/RESUME_TRAINING.md). No pretrained assistant capability is claimed.

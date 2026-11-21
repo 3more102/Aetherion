@@ -1,4 +1,4 @@
-"""Train Aetherion Micro from UTF-8 bytes (educational starter)."""
+"""Train Aetherion Micro on byte sequences with verifiable resume support."""
 import argparse
 from dataclasses import asdict
 from hashlib import sha256
@@ -6,6 +6,7 @@ from pathlib import Path
 
 import torch
 from aetherion import Aetherion, ModelConfig
+from aetherion.checkpoint import load_training_checkpoint, save_training_checkpoint
 
 
 def resolve_device(name: str) -> str:
@@ -39,7 +40,7 @@ def main():
     parser = argparse.ArgumentParser(description="Aetherion Micro training")
     parser.add_argument("--data", default="data/demo.txt")
     parser.add_argument("--val-data", default=None, help="Separate validation text from prepare_data.py")
-    parser.add_argument("--steps", type=int, default=200)
+    parser.add_argument("--steps", type=int, default=200, help="Total training steps, including any resumed steps")
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--block-size", type=int, default=128)
     parser.add_argument("--d-model", type=int, default=128)
@@ -47,12 +48,16 @@ def main():
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--eval-every", type=int, default=50)
+    parser.add_argument("--save-every", type=int, default=50, help="Save after every N steps (0 disables periodic saves)")
+    parser.add_argument("--resume", default=None, help="Resume optimizer, weights and RNG state from this checkpoint")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--output", default="checkpoints/demo.pt")
     args = parser.parse_args()
-    if args.steps < 1 or args.batch_size < 1 or args.eval_every < 1:
-        parser.error("--steps, --batch-size, and --eval-every must be >= 1")
+    if args.steps < 1 or args.batch_size < 1 or args.eval_every < 1 or args.save_every < 0:
+        parser.error("--steps, --batch-size, --eval-every must be >= 1 and --save-every >= 0")
+    if args.lr <= 0:
+        parser.error("--lr must be > 0")
 
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
@@ -64,34 +69,56 @@ def main():
                       n_layers=args.layers, n_heads=args.heads)
     model = Aetherion(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
+    hparams = {"batch_size": args.batch_size, "learning_rate": args.lr, "weight_decay": 0.1}
+    train_rng = torch.Generator(device="cpu").manual_seed(args.seed + 1)
+    start_step = 0
+    if args.resume is not None:
+        start_step = load_training_checkpoint(
+            args.resume, model=model, optimizer=optimizer, train_rng=train_rng,
+            config=asdict(cfg), seed=args.seed, data=hashes, hparams=hparams
+        )
+        if start_step >= args.steps:
+            parser.error(f"--steps must exceed checkpoint step ({start_step}); it is a total step target")
+        print(f"resumed_checkpoint={args.resume} from_step={start_step}")
     print(f"device={device} parameters={sum(p.numel() for p in model.parameters()):,}")
 
-    def get_batch(split: torch.Tensor):
-        starts = torch.randint(0, len(split) - cfg.block_size, (args.batch_size,))
+    def get_batch(split: torch.Tensor, generator: torch.Generator):
+        starts = torch.randint(0, len(split) - cfg.block_size, (args.batch_size,), generator=generator)
         x = torch.stack([split[i:i + cfg.block_size] for i in starts])
         y = torch.stack([split[i + 1:i + cfg.block_size + 1] for i in starts])
         return x.to(device), y.to(device)
 
-    for step in range(1, args.steps + 1):
+    output = Path(args.output)
+
+    def save(step: int):
+        save_training_checkpoint(
+            output, model=model, optimizer=optimizer, train_rng=train_rng,
+            config=asdict(cfg), step=step, seed=args.seed, data=hashes, hparams=hparams
+        )
+        print(f"saved_checkpoint={output} step={step}")
+
+    for step in range(start_step + 1, args.steps + 1):
         model.train()
-        x, y = get_batch(train)
+        x, y = get_batch(train, train_rng)
         _, loss = model(x, y)
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
         if step == 1 or step % args.eval_every == 0 or step == args.steps:
+            # Step-specific validation sampling prevents extra end-of-run evaluations
+            # from perturbing training RNG or later validation measurements.
+            val_rng = torch.Generator(device="cpu").manual_seed(args.seed + 1_000_003 + step)
             model.eval()
             with torch.inference_mode():
-                vx, vy = get_batch(val)
+                vx, vy = get_batch(val, val_rng)
                 _, val_loss = model(vx, vy)
             print(f"step={step:4d} train_loss={loss.item():.3f} val_loss={val_loss.item():.3f}")
+        if args.save_every and step % args.save_every == 0:
+            save(step)
 
-    output = Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"config": asdict(cfg), "state_dict": model.state_dict(),
-                "step": args.steps, "seed": args.seed, "data": hashes}, output)
-    print(f"saved_checkpoint={output}")
+    if not args.save_every or args.steps % args.save_every:
+        save(args.steps)
 
 
 if __name__ == "__main__":
