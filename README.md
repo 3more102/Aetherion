@@ -2,7 +2,7 @@
 
 **Aetherion** is an open-source experimental language-model project. Our goal is to understand, implement, train, evaluate, and eventually serve an original decoder-only Transformer.
 
-> **Status: Phase 0 / engineering prototype.** This repository starts with a small model using random weights and byte-level tokenization. It is **not** a competitive general-purpose assistant, and no frontier-level capabilities are claimed.
+> **Status: Phase 0 / engineering prototype.** This repository starts with a small model using randomly initialized weights and supports byte-level or experimental BPE tokenization. It is **not** a competitive general-purpose assistant, and no frontier-level capabilities are claimed.
 
 ## Project tracks
 
@@ -45,7 +45,18 @@ python -m aetherion.data --input data/raw/corpus.jsonl --output-dir data/process
 python -m aetherion.tokenizer --train data/processed/train.jsonl --output artifacts/tokenizer.json --vocab-size 32000
 ```
 
-Outputs include train/validation/test JSONL splits and a SHA-256 manifest, plus a serialized ByteLevel BPE tokenizer. The experiment does **not** yet integrate BPE token IDs into `train.py` or `generate.py`: those continue to use UTF-8 bytes.
+The tokenizer command now writes both `tokenizer.json` and `tokenizer.meta.json` (training-split and tokenizer SHA-256 hashes). Use the prepared **document-separated validation split** to train the Micro model with token IDs:
+
+```bash
+python train.py --data data/processed/train.jsonl --val-data data/processed/validation.jsonl \
+  --tokenizer artifacts/tokenizer.json --steps 100 --output checkpoints/micro-bpe.pt
+python generate.py --checkpoint checkpoints/micro-bpe.pt \
+  --tokenizer artifacts/tokenizer.json --prompt "Hello" --tokens 30
+```
+
+BPE training fails if the split checksums differ from `data/processed/manifest.json`, or the tokenizer sidecar was fitted on a different training split. Generation verifies the checkpoint's tokenizer SHA-256 and vocabulary size. The old byte-only `train.py`/`generate.py` commands remain supported; byte mode's default last-10%-of-bytes validation is **demo-only**. BPE validation is document-disjoint according to the prepared split groups, but language quality remains unmeasured.
+
+See [BPE integration notes](docs/BPE_INTEGRATION.md) for invariants and limitations.
 
 **Important limitations:** only exact normalized-text deduplication is performed. Near-duplicate removal, PII/secret scanning, actual license verification, and evaluation-set contamination screening must be completed before real model training. Data labels alone do not prove permission. No private or unlicensed corpora should be committed.
 

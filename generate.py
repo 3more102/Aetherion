@@ -1,15 +1,41 @@
-"""Generate text from byte-level or BPE Aetherion Micro checkpoints."""
+"""Generate from an Aetherion Micro byte or BPE checkpoint."""
 import argparse
+
 import torch
+
 from aetherion import Aetherion, ModelConfig
-from aetherion.token_stream import file_sha256
+from aetherion.encoding import sha256_file
 from train import resolve_device
+
+
+def encode_prompt(prompt: str, checkpoint: dict, tokenizer_path: str | None):
+    """Encode with the checkpoint's recorded tokenizer, never a silent fallback."""
+    info = checkpoint.get("tokenizer")
+    if not info:
+        legacy_hash = checkpoint.get("tokenizer_sha256")
+        info = {"mode": "bpe", "sha256": legacy_hash} if legacy_hash else {"mode": "byte"}
+    mode = info.get("mode", "byte")
+    if mode == "byte":
+        if tokenizer_path:
+            raise ValueError("Byte checkpoint cannot be used with --tokenizer")
+        return list(prompt.encode("utf-8")), None
+    if mode != "bpe":
+        raise ValueError(f"Unsupported tokenizer mode: {mode}")
+    if not tokenizer_path:
+        raise ValueError("BPE checkpoint requires --tokenizer")
+    if sha256_file(tokenizer_path) != info.get("sha256"):
+        raise ValueError("Tokenizer SHA-256 mismatch with checkpoint")
+    from tokenizers import Tokenizer
+    tokenizer = Tokenizer.from_file(tokenizer_path)
+    if tokenizer.get_vocab_size() != checkpoint["config"]["vocab_size"]:
+        raise ValueError("Tokenizer vocabulary does not match model embeddings")
+    return tokenizer.encode(prompt, add_special_tokens=False).ids, tokenizer
 
 
 def main():
     parser = argparse.ArgumentParser(description="Aetherion Micro text generation")
     parser.add_argument("--checkpoint", default="checkpoints/demo.pt")
-    parser.add_argument("--tokenizer", help="BPE tokenizer.json matching the checkpoint")
+    parser.add_argument("--tokenizer", help="Tokenizer JSON for BPE checkpoints")
     parser.add_argument("--prompt", default="Artificial intelligence")
     parser.add_argument("--tokens", type=int, default=100)
     parser.add_argument("--temperature", type=float, default=0.8)
@@ -19,35 +45,22 @@ def main():
         parser.error("--tokens must be >= 0 and --temperature must be > 0")
     device = resolve_device(args.device)
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
-    expected_hash = checkpoint.get("tokenizer_sha256")
-    if expected_hash and not args.tokenizer:
-        parser.error("This checkpoint requires --tokenizer")
-    if not expected_hash and args.tokenizer:
-        parser.error("This checkpoint uses byte tokens; do not pass --tokenizer")
-    tokenizer = None
-    if args.tokenizer:
-        if file_sha256(args.tokenizer) != expected_hash:
-            raise ValueError("Tokenizer SHA-256 mismatch with checkpoint")
-        from tokenizers import Tokenizer
-        tokenizer = Tokenizer.from_file(args.tokenizer)
-        if tokenizer.get_vocab_size() != checkpoint["config"]["vocab_size"]:
-            raise ValueError("Tokenizer vocabulary size differs from checkpoint")
-
+    try:
+        prompt_ids, tokenizer = encode_prompt(args.prompt, checkpoint, args.tokenizer)
+    except (ValueError, FileNotFoundError) as exc:
+        parser.error(str(exc))
+    if not prompt_ids:
+        parser.error("The prompt must encode to at least one token")
     model = Aetherion(ModelConfig(**checkpoint["config"]))
     model.load_state_dict(checkpoint["state_dict"])
     model.to(device)
-    if tokenizer is None:
-        prompt_ids = list(args.prompt.encode("utf-8"))
-    else:
-        prompt_ids = tokenizer.encode(args.prompt, add_special_tokens=False).ids
-    if not prompt_ids:
-        parser.error("The prompt must contain at least one token")
     tokens = torch.tensor([prompt_ids], device=device, dtype=torch.long)
     result = model.generate(tokens, max_new_tokens=args.tokens, temperature=args.temperature)
+    ids = result[0].tolist()
     if tokenizer is None:
-        print(bytes(result[0].tolist()).decode("utf-8", errors="replace"))
+        print(bytes(ids).decode("utf-8", errors="replace"))
     else:
-        print(tokenizer.decode(result[0].tolist(), skip_special_tokens=True))
+        print(tokenizer.decode(ids, skip_special_tokens=True))
 
 
 if __name__ == "__main__":

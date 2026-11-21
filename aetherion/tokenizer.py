@@ -62,11 +62,26 @@ def train_tokenizer(
     output = Path(output_json)
     output.parent.mkdir(parents=True, exist_ok=True)
     tokenizer.save(str(output))
+    tokenizer_sha256 = hashlib.sha256(output.read_bytes()).hexdigest()
+    train_sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+    metadata = {
+        "schema_version": 1,
+        "tokenizer_sha256": tokenizer_sha256,
+        "train_sha256": train_sha256,
+        "vocab_size": tokenizer.get_vocab_size(),
+        "special_tokens": SPECIAL_TOKENS,
+    }
+    metadata_path = output.with_suffix(".meta.json")
+    metadata_path.write_text(
+        json.dumps(metadata, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
     return {
         "tokenizer_path": str(output),
-        "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        "metadata_path": str(metadata_path),
+        "sha256": tokenizer_sha256,
         "vocab_size": tokenizer.get_vocab_size(),
-        "train_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "train_sha256": train_sha256,
         "special_tokens": SPECIAL_TOKENS,
     }
 

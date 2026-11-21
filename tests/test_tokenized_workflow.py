@@ -79,6 +79,13 @@ def test_full_bpe_cli_if_available(tmp_path):
     for path, token in ((train_set, "train"), (val_set, "heldout")):
         path.write_text("".join(json.dumps({"text": f"{token} مرحبا example {i}"}, ensure_ascii=False) + "\n"
                                 for i in range(50)), encoding="utf-8")
+    # Simulate the checksums emitted by the deterministic corpus preparer.
+    (tmp_path / "manifest.json").write_text(json.dumps({
+        "splits": {
+            "train": {"sha256": file_sha256(train_set)},
+            "validation": {"sha256": file_sha256(val_set)},
+        }
+    }), encoding="utf-8")
     tok_file = tmp_path / "tokenizer.json"
     tok_info = train_tokenizer(train_set, tok_file, vocab_size=300, min_frequency=1)
     checkpoint = tmp_path / "model.pt"

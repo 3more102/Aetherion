@@ -1,46 +1,62 @@
-# Aetherion Micro: BPE training and generation
+# BPE integration (experimental, Micro only)
 
-This experimental path integrates the existing ByteLevel BPE tokenizer with
-Aetherion-Micro. **It is a pipeline verification tool, not a trained assistant.**
+The `feat/bpe-train-generate-integration` branch is stacked on the source-grouped
+data/BPE work in PR #11. The new pipeline converts prepared documents to token IDs
+while preserving the original UTF-8 byte training mode.
 
-## Reproducible workflow
-
-Prepare a corpus you have verified you are allowed to use, following
-[the data-pipeline guide](EXECUTION_PLAN.md). The corpus preparer keeps related
-`group_id` values together when making splits.
+## Run with authorized local data
 
 ```bash
 python -m aetherion.data --input data/raw/corpus.jsonl --output-dir data/processed --seed 42
 python -m aetherion.tokenizer --train data/processed/train.jsonl --output artifacts/tokenizer.json --vocab-size 32000
-python train.py --data data/processed/train.jsonl --val-data data/processed/validation.jsonl \
-  --tokenizer artifacts/tokenizer.json --steps 5 --batch-size 2 \
-  --block-size 32 --d-model 32 --layers 2 --heads 4 \
-  --output checkpoints/bpe-micro.pt
-python generate.py --checkpoint checkpoints/bpe-micro.pt \
-  --tokenizer artifacts/tokenizer.json --prompt "Hello مرحبا" --tokens 16
-python -m pytest -q
+python train.py --data data/processed/train.jsonl --val-data data/processed/validation.jsonl --tokenizer artifacts/tokenizer.json --steps 100 --output checkpoints/micro-bpe.pt
+python generate.py --checkpoint checkpoints/micro-bpe.pt --tokenizer artifacts/tokenizer.json --prompt "Hello" --tokens 50
 ```
 
-**What is guaranteed by the code:**
+These commands are a wiring smoke test, **not** a large-scale training recipe.
+The model uses randomly initialized parameters until training completes.
 
-- BPE fitting uses `train.jsonl` and not the held-out documents.
-- Training accepts separate `--data` and `--val-data` inputs; BPE requires a
-  separate validation file and rejects identical input bytes/paths.
-- A JSONL token stream encodes **only** its `text` values, adding the tokenizer's
-  `<|eos|>` after each document. This is a concatenated token stream, not
-  document-masked attention.
-- Model `vocab_size` is read from the BPE tokenizer.
-- Checkpoints store tokenizer SHA-256, train/val file SHA-256, and token counts.
-  Inference rejects a missing or differently hashed tokenizer.
-- Legacy plain-text 256-byte training/checkpoints remain supported. Raw JSONL
-  is rejected in byte mode to avoid learning dataset metadata accidentally.
+## Validation invariants
 
-**Limits and next gates:** These scripts materialize token streams in memory,
-do not resume optimizer state, and do not measure serious training capability.
-Exact deduplication and group splits are not enough: verify licenses, conduct
-PII/secret and near-duplicate screening, and check benchmark contamination
-before training on real corpora. A 125M pretraining run requires a measured
-hardware/budget pilot. Use the training split only to fit tokenizer merges.
+- Input names are exactly `train.jsonl` and `validation.jsonl` in the **same**
+  prepared data directory; validation must be passed explicitly in BPE mode.
+- Both split checksums must match `manifest.json`; identical train and validation
+  checksums are refused. The manifest must come from corpus preparation.
+- Tokenizer training consumes only `train.jsonl`. The tokenizer command emits
+  `tokenizer.meta.json` recording the SHA-256 of the training split, tokenizer
+  artifact and vocabulary size. Modifying either file invalidates the check.
+- Document boundaries are marked with `<|eos|>` between each encoded text.
+- Checkpoints contain tokenizer mode, vocabulary, tokenizer SHA-256, split
+  checksums and manifest checksum. Generation refuses BPE inference without
+  the matching tokenizer. Old checkpoints without tokenizer metadata remain
+  readable as byte checkpoints.
+- The tokenizer and data checks use hashes to detect mismatches; **they do not**
+  authenticate the author of the files or grant rights to use their content.
 
-Do not commit private corpora, credentials, model weights or tokenizer artifacts
-unless distribution rights are independently established.
+## Limitations / next work
+
+The BPE loader currently materializes all tokens in RAM. It is suitable for a
+Micro test and **must** be replaced with memory-mapped, packed token shards and
+a resumable sharded dataloader before larger-scale training. The trainer does
+not yet save optimizer state, scheduler state, sampler position or RNG states.
+Evaluation still samples validation batches rather than calculating a full
+held-out aggregate. There is no training/evaluation pipeline for the planned
+Aetherion-125M model yet.
+
+The split preparer only performs normalized exact duplicate removal and
+source/group separation where group IDs correctly capture related documents.
+Near-duplicate, personal-information, secret, license, source-authorization
+and benchmark-contamination reviews remain independent prerequisites.
+Synthetic demo metrics cannot establish assistant quality.
+
+## Verification
+
+```bash
+python -m pytest -q
+python -m compileall -q aetherion train.py generate.py
+```
+
+The integration regression test trains a tiny CPU BPE model for one step,
+generates from its checkpoint and rejects modified tokenizer/split artifacts.
+CI results must be inspected at the exact head commit; a local test pass is
+not evidence of an actually trained production model.
