@@ -26,6 +26,7 @@ pip install -r requirements.txt
 pytest -q
 python train.py --steps 5 --batch-size 2 --d-model 32 --layers 2 --heads 4 --block-size 32
 python generate.py --prompt "Hello" --tokens 30
+python evaluate.py --checkpoint checkpoints/demo.pt --data data/demo.txt --device cpu
 ```
 
 The sample corpus is synthetic demonstration text, not sufficient to build a chat assistant. Training a strong model from scratch requires vastly more data and compute.
@@ -38,6 +39,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 
 ## Documentation
 
+- [Build plan: execution gates and next PRs](docs/BUILD_PLAN.md)
 - [Engineering roadmap](docs/ROADMAP.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Dataset and evaluation policy](docs/DATA_AND_EVALUATION.md)

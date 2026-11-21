@@ -16,3 +16,5 @@ jobs:
       - run: python -m pytest -q
       - run: python train.py --steps 2 --batch-size 2 --d-model 32 --layers 2 --heads 4 --block-size 32 --output /tmp/aetherion-smoke.pt
       - run: python generate.py --checkpoint /tmp/aetherion-smoke.pt --prompt "Hello" --tokens 4
+
+      - run: python evaluate.py --checkpoint /tmp/aetherion-smoke.pt --data data/demo.txt --device cpu
