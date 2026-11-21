@@ -39,6 +39,22 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
+## Restartable Micro training (new)
+
+Periodic **atomic** checkpoints now preserve optimizer state, model weights,
+step, dataset/configuration hashes and Torch RNG state. Resuming rejects
+incompatible data and settings. The target `--steps` value is cumulative.
+
+```bash
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt \
+  --steps 200 --save-every 50 --output checkpoints/micro-v1.pt
+python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt \
+  --steps 500 --save-every 50 --resume checkpoints/micro-v1.pt --output checkpoints/micro-v1.pt
+```
+
+See [Resume training](docs/RESUMABLE_TRAINING.md) for validation and
+reproducibility limits. CPU exact-resume regression tests run in CI.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
