@@ -1,5 +1,6 @@
 """Train Aetherion Micro from UTF-8 bytes (educational starter)."""
 import argparse
+import hashlib
 from dataclasses import asdict
 from pathlib import Path
 import torch
@@ -36,7 +37,9 @@ def main():
 
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
-    data = torch.tensor(list(Path(args.data).read_bytes()), dtype=torch.long)
+    raw_data = Path(args.data).read_bytes()
+    data_sha256 = hashlib.sha256(raw_data).hexdigest()
+    data = torch.tensor(list(raw_data), dtype=torch.long)
     cutoff = int(0.9 * len(data))
     train, val = data[:cutoff], data[cutoff:]
     if min(len(train), len(val)) < args.block_size + 2:
@@ -72,7 +75,10 @@ def main():
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     torch.save({"config": asdict(cfg), "state_dict": model.state_dict(),
-                "step": args.steps, "seed": args.seed}, output)
+                "step": args.steps, "seed": args.seed,
+                "dataset_sha256": data_sha256,
+                "train_tokens": len(train), "val_tokens": len(val),
+                "torch_version": str(torch.__version__)}, output)
     print(f"saved_checkpoint={output}")
 
 
