@@ -45,7 +45,19 @@ python -m aetherion.data --input data/raw/corpus.jsonl --output-dir data/process
 python -m aetherion.tokenizer --train data/processed/train.jsonl --output artifacts/tokenizer.json --vocab-size 32000
 ```
 
-Outputs include train/validation/test JSONL splits and a SHA-256 manifest, plus a serialized ByteLevel BPE tokenizer. The experiment does **not** yet integrate BPE token IDs into `train.py` or `generate.py`: those continue to use UTF-8 bytes.
+Outputs include train/validation/test JSONL splits and a SHA-256 manifest, plus a serialized ByteLevel BPE tokenizer. Train and generate a **small BPE experiment** on separate prepared splits:
+
+```bash
+python train.py --data data/processed/train.jsonl --val-data data/processed/validation.jsonl \
+  --tokenizer artifacts/tokenizer.json --steps 20 --block-size 32 \
+  --batch-size 2 --d-model 32 --layers 2 --heads 4 --output checkpoints/bpe-micro.pt
+python generate.py --checkpoint checkpoints/bpe-micro.pt \
+  --tokenizer artifacts/tokenizer.json --prompt "Hello مرحبا" --tokens 30
+```
+
+The training checkpoint records train/validation file SHA-256 hashes, BPE tokenizer SHA-256, vocabulary size, seed, and sampled token count. Inference refuses a missing or modified BPE tokenizer. For a byte-mode demo, the existing quick-start commands still work without `--tokenizer`.
+
+**Experiment limitations:** tokenized documents are concatenated with EOS boundaries, and training contexts may span boundaries. Packed-shard training, interrupted checkpoint resumption, full validation perplexity, and large-scale pretraining are not implemented.
 
 **Important limitations:** only exact normalized-text deduplication is performed. Near-duplicate removal, PII/secret scanning, actual license verification, and evaluation-set contamination screening must be completed before real model training. Data labels alone do not prove permission. No private or unlicensed corpora should be committed.
 
