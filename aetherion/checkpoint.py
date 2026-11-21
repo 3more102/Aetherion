@@ -52,7 +52,7 @@ def save_training_checkpoint(
             if _device_type(device) == "mps" and hasattr(torch, "mps")
             and hasattr(torch.mps, "get_rng_state") else None
         ),
-        "torch_version": torch.__version__,
+        "torch_version": str(torch.__version__),
     }
 
     fd, temporary = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
