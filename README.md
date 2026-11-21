@@ -39,6 +39,16 @@ python prepare_data.py /path/to/authorized.jsonl --output-dir data/processed/v1
 python train.py --data data/processed/v1/train.txt --val-data data/processed/v1/validation.txt --steps 100 --output checkpoints/experiment-v1.pt
 ```
 
+## Model architecture inspection
+
+The proposed **Aetherion-125M** architecture has exactly **123,688,704 trainable parameters** with tied input/output embeddings. Inspect it on the PyTorch `meta` device without allocating the full weights:
+
+```bash
+python inspect_model.py --preset aetherion-125m --weight-dtype bf16
+```
+
+See [model presets and parameter audit](docs/MODEL_PRESETS.md). Parameter count is not a claim of pretrained capabilities, GPU fit, or measured performance.
+
 ## Architecture
 
 Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE → residual → RMSNorm → SwiGLU → residual) → RMSNorm → tied LM head → next-token loss.
@@ -49,6 +59,7 @@ The research target for Aetherion-125M is **14 layers, width 768, 12 attention h
 
 - [Eight-week execution plan (priorities, exit gates, risks)](docs/EXECUTION_PLAN.md)
 - [Engineering roadmap](docs/ROADMAP.md)
+- [Model presets and exact parameter audit](docs/MODEL_PRESETS.md)
 - [Architecture and design choices](docs/ARCHITECTURE.md)
 - [Data preparation and split manifest](docs/DATA_PIPELINE.md)
 - [Dataset and evaluation policy](docs/DATA_AND_EVALUATION.md)
