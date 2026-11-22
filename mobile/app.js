@@ -94,7 +94,8 @@ function validateManifest(manifest) {
          manifest.quantization.type !== "weight_only_symmetric_int4" ||
          manifest.quantization.format !== "MatMulNBits" ||
          !Number.isInteger(manifest.quantization.quantized_matmul_nodes) ||
-         manifest.quantization.quantized_matmul_nodes < 1)) {
+         manifest.quantization.quantized_matmul_nodes < 1 ||
+         !isSha256(manifest.source_onnx_sha256))) {
       throw new Error("Unrecognized M18 quantization metadata.");
     }
   } else {
@@ -283,6 +284,17 @@ function modelFormat(manifest) {
     (manifest.quantization ? "int4_full_window" : "fp32_full_window");
 }
 
+function sourceModelSha256(manifest) {
+  // Link INT4 and FP32 exports only when their manifests prove common origin.
+  // Do not infer provenance from the name or the locally imported file.
+  if (manifest.schema_version === 3) return manifest.source_graphs.prefill.sha256;
+  if (manifest.schema_version === 1 && manifest.quantization) {
+    return manifest.source_onnx_sha256;
+  }
+  return isCachedManifest(manifest) ?
+    manifest.graphs.prefill.sha256 : manifest.onnx_sha256;
+}
+
 function displayBenchmark(phases, warmups, elapsedMs, memoryBefore, memoryAfter, interrupted) {
   const all = [...phases.prefill, ...phases.decode, ...phases.full_window];
   const measured = all.length;
@@ -290,13 +302,15 @@ function displayBenchmark(phases, warmups, elapsedMs, memoryBefore, memoryAfter,
     2 * state.manifest.n_layers * state.manifest.n_heads *
       state.manifest.window * state.manifest.head_dim * 4 : 0;
   const report = {
-    schema_version: 2,
+    schema_version: 3,
     kind: "aetherion-mobile-local-browser-inference-benchmark",
+    benchmark_protocol: "hi_warmup2_16byte_greedy_v1",
     generated_at_utc: new Date().toISOString(),
     scope: "offline-local-single-thread-wasm-byte-token-inference",
     inference_format: modelFormat(state.manifest),
     model_sha256: isCachedManifest(state.manifest) ?
       state.manifest.graphs.prefill.sha256 : state.manifest.onnx_sha256,
+    source_model_sha256: sourceModelSha256(state.manifest),
     model_manifest_schema: state.manifest.schema_version,
     model_file_bytes: state.modelBytes,
     model_load_and_sha_verify_ms: state.modelLoadAndVerifyMs === null ?
@@ -346,7 +360,7 @@ function downloadBenchmark() {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "aetherion-m21-device-benchmark.json";
+  link.download = "aetherion-m22-device-benchmark.json";
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
