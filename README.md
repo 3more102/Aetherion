@@ -2,16 +2,16 @@
 
 **Aetherion** is an open-source experimental language-model project. Our goal is to understand, implement, train, evaluate, and eventually serve an original decoder-only Transformer.
 
-> **Status: Phase 0 / engineering prototype.** This repository starts with a small model using random weights and byte-level tokenization. It is **not** a competitive general-purpose assistant, and no frontier-level capabilities are claimed.
+> **Status: engineering prototype.** Training, checkpointing, instruction tuning, cached inference, evaluation and experimental DDP/XPU paths are implemented and tested, but no large pretrained assistant weights or frontier-level capabilities are claimed. Synthetic tests are not evidence of useful general-purpose intelligence.
 
 ## Project tracks
 
 | Track | Goal | State |
 |---|---|---|
-| Aetherion-Micro | Reproducible train/generate/test loop on CPU or GPU | Phase 0 |
-| Aetherion-125M | Trained tokenizer, clean data, ~125M parameter baseline | Planned |
-| Aetherion-Instruct | Instruction tuning, evaluation, model card | Planned |
-| Aetherion-Scale | Distributed training and larger model feasibility | Research |
+| Aetherion-Micro | Reproducible training/generation and learning-signal tests | Implemented (synthetic validation) |
+| Aetherion-125M | Reviewed corpus, 32k BPE, hardware pilot and measured held-out metrics | Gated pilot tooling; untrained |
+| Aetherion-Instruct | Response-only SFT and local KV-cached chat | Implemented tooling; no verified assistant checkpoint |
+| Aetherion-Scale | CPU/CUDA DDP prototype, activation checkpointing, size presets | Implemented infrastructure; large models untrained |
 
 ## Quick start
 
@@ -97,3 +97,7 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 ## Verified validation evaluation
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
+
+## M17: Verified held-out training evidence
+
+After saving two checkpoints from the same training run, use [M17 checkpoint comparison](docs/M17_CHECKPOINT_COMPARISON.md) to verify corpus and tokenizer fingerprints, equal training settings and exact validation-token coverage before comparing perplexity. Real 125M comparisons require a reviewed corpus and 32k BPE artifact; `--demo` is explicitly limited to unreviewed byte-token fixtures. Passing CI or improving a synthetic sequence is **not** a claim of real pretrained language ability.
