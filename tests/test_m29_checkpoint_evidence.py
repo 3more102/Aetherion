@@ -80,11 +80,11 @@ def test_reject_tampered_inputs_and_demo_approval_mix(tiny_checkpoint):
     folder, ckpt = tiny_checkpoint
     with pytest.raises(ValueError, match="requires byte tokens"):
         demo(folder, ckpt, tokenizer="dummy.json")
+    with pytest.raises(ValueError, match="stride"):
+        demo(folder, ckpt, stride=9)
     (folder / "validation.txt").write_text("Changed heldout content.")
     with pytest.raises(ValueError, match="fingerprints differ"):
         demo(folder, ckpt)
-    with pytest.raises(ValueError, match="stride"):
-        demo(folder, ckpt, stride=9)
 
 
 def test_reject_invalid_checkpoint_metadata_before_model_build(tiny_checkpoint, tmp_path):
