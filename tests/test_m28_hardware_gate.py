@@ -155,3 +155,22 @@ def test_pilot_dry_run_remains_available_without_benchmark(monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["executed"] is False
     assert payload["command"] == ["train.py", "--dry"]
+
+
+def test_benchmark_cli_writes_once_without_overwriting(monkeypatch, capsys, tmp_path):
+    import benchmark_training
+    out = tmp_path / "measured-synthetic.json"
+    monkeypatch.setattr(benchmark_training, "benchmark",
+                        lambda **kwargs: synthetic_report())
+    monkeypatch.setattr(sys, "argv", [
+        "benchmark_training.py", "--preset", "125m",
+        "--device", "cuda:0", "--context", "256",
+        "--output", str(out),
+    ])
+    benchmark_training.main()
+    assert json.loads(out.read_text())["schema_version"] == 1
+    assert json.loads(capsys.readouterr().out)["kind"] == (
+        "aetherion-synthetic-optimizer-hardware-benchmark")
+    with pytest.raises(FileExistsError):
+        benchmark_training.main()
+    assert json.loads(out.read_text())["synthetic"] is True
