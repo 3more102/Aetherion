@@ -93,3 +93,7 @@ MIT (source code). Datasets and later model weights require independent licensin
 ## Resumable Micro training
 
 After the initial training run, restart from an optimizer/RNG checkpoint with `--resume` and a larger total `--steps` value. See [the resume guide](docs/RESUME_TRAINING.md). No pretrained assistant capability is claimed.
+
+## Verified validation evaluation
+
+Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.

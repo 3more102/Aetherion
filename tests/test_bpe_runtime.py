@@ -99,3 +99,22 @@ def test_reject_mismatched_tokenizer_and_corrupted_splits(bpe_project):
     (data / "validation.txt").write_text("modified after preparation", encoding="utf-8")
     with pytest.raises(ValueError, match="checksum mismatch"):
         load_bpe_data(str(data / "train.txt"), str(data / "validation.txt"), str(artifact))
+
+
+def test_bpe_validation_evaluator(bpe_project):
+    data, artifact, _, tmp = bpe_project
+    checkpoint = tmp / "evaluation.pt"
+    data_args = ["--data", str(data / "train.txt"), "--val-data",
+                 str(data / "validation.txt"), "--tokenizer", str(artifact)]
+    subprocess.run([sys.executable, "train.py", *data_args, "--steps", "1",
+                    "--batch-size", "1", "--d-model", "16", "--layers", "1",
+                    "--heads", "2", "--block-size", "8", "--device", "cpu",
+                    "--output", str(checkpoint)], check=True, capture_output=True)
+    completed = subprocess.run([sys.executable, "evaluate.py", *data_args,
+                                "--checkpoint", str(checkpoint), "--device", "cpu"],
+                               check=True, capture_output=True, text=True)
+    report = json.loads(completed.stdout)
+    _, val, _, _ = load_bpe_data(str(data / "train.txt"), str(data / "validation.txt"), str(artifact))
+    assert report["evaluated_targets"] == val.numel() - 1
+    assert report["tokenizer_type"] == "bpe"
+    assert report["perplexity"] > 0
