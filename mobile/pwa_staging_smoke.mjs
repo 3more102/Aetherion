@@ -48,7 +48,9 @@ const cacheMock = (name) => {
       for (const url of urls) {
         const path = url === "./" ? "index.html" : url.replace(/^\.\//, "");
         if (!existsSync(path)) throw new Error("Asset not available: " + url);
-        entries.set(url, { ok: true, clone() { return this; } });
+        entries.set(url, url === "./precache-assets.json" ?
+          { ok: true, async json() { return inventory; }, clone() { return this; } } :
+          { ok: true, clone() { return this; } });
       }
     },
     async match(key) { return entries.get(key) ?? null; },
@@ -100,5 +102,30 @@ listeners.fetch({
   respondWith() { modelIntercepted = true; },
 });
 assert.equal(modelIntercepted, false, "Models must never be cached by SW");
+let privateResponse = null;
+listeners.fetch({
+  request: {
+    method: "GET",
+    url: "https://example.test/mobile/private-report.json",
+    mode: "same-origin",
+  },
+  respondWith(promise) { privateResponse = promise; },
+  waitUntil() {},
+});
+assert.ok(privateResponse, "Unlisted network request should still receive a response");
+await privateResponse;
+assert.ok(!stored.has("./private-report.json"), "Unknown JSON must not enter static CacheStorage");
+assert.ok(!stored.has("https://example.test/mobile/private-report.json"));
+
+let shellResponse = null;
+listeners.fetch({
+  request: { method: "GET", url: "https://example.test/mobile/app.js", mode: "same-origin" },
+  respondWith(promise) { shellResponse = promise; },
+  waitUntil() {},
+});
+assert.ok(shellResponse);
+assert.ok((await shellResponse).ok, "Known app script should serve from offline precache");
+assert.ok(stored.has("./model-vault.js"), "IndexedDB vault script must be bundled for offline use");
+
 assert.ok(networkRequests >= 1);
 console.log("M21 PWA PNG, offline runtime, scoped cache cleanup and no-model-cache smoke passed");
