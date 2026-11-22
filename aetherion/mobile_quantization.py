@@ -9,7 +9,6 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-import numpy as np
 
 
 def _digest(path: Path) -> str:
@@ -28,6 +27,7 @@ def quantize_mobile_int4(
     Checks synthetic inference parity against FP32 and records its error.
     Measured error here is *not* a language-quality metric.
     """
+    import numpy as np
     import onnx
     import onnxruntime as ort
     from onnxruntime.quantization import matmul_4bits_quantizer, quant_utils
