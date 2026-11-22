@@ -1,6 +1,7 @@
 """M16 checks a true optimizer learning signal, not model intelligence."""
 import json
 import math
+import os
 import subprocess
 import sys
 
@@ -34,7 +35,7 @@ def test_overfit_cli_json_report():
     torch.set_num_threads(1)
     done = subprocess.run([sys.executable, "overfit_check.py", "--steps", "40"],
                           capture_output=True, text=True, check=True,
-                          env={"OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"})
+                          env={**os.environ, "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"})
     report = json.loads(done.stdout)
     assert report["passed"] is True
     assert report["diagnostic"] == "synthetic_training_overfit"
