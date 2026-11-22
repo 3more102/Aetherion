@@ -83,7 +83,7 @@ let install;
 listeners.install({ waitUntil(promise) { install = promise; } });
 await install;
 assert.ok(skipped);
-const stored = databases.get("aetherion-mobile-m22-v1");
+const stored = databases.get("aetherion-mobile-m23-v1");
 assert.ok(stored);
 for (const path of inventory.assets) {
   assert.ok(stored.has(path), "Runtime not precached for offline use: " + path);
