@@ -112,7 +112,7 @@ assert.deepEqual(Array.from(new Uint8Array((await vault.read()).prefillBytes)),
   [5, 6], "Failed atomic write must not destroy prior saved model");
 await assert.rejects(vault.save({ ...source, prefillBytes: new ArrayBuffer(0) }), /invalid/);
 await assert.rejects(vault.save({ ...source, manifestText: "x".repeat(256 * 1024 + 1) }), /invalid/);
-await assert.rejects(vault.save({ ...source, prefillBytes: new ArrayBuffer(256 * 1024 * 1024 + 1) }),
+await assert.rejects(vault.save({ ...source, prefillBytes: Object.defineProperty(new ArrayBuffer(1), "byteLength", { value: 256 * 1024 * 1024 + 1 }) }),
   /limit/);
 idb.corruptStored({ version: 8, manifestText: "broken" });
 await assert.rejects(vault.read(), /invalid/);
