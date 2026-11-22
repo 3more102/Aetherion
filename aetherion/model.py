@@ -35,13 +35,13 @@ class RMSNorm(nn.Module):
         return x * torch.rsqrt(rms + self.eps).to(x.dtype) * self.weight
 
 
-def apply_rope(x: torch.Tensor) -> torch.Tensor:
+def apply_rope(x: torch.Tensor, offset: int = 0) -> torch.Tensor:
     """Rotary embeddings for tensor shape (batch, heads, time, head_dim)."""
     time, width = x.size(-2), x.size(-1)
     inv_freq = 1.0 / (
         10000 ** (torch.arange(0, width, 2, device=x.device, dtype=torch.float32) / width)
     )
-    phase = torch.outer(torch.arange(time, device=x.device, dtype=torch.float32), inv_freq)
+    phase = torch.outer(torch.arange(offset, offset + time, device=x.device, dtype=torch.float32), inv_freq)
     phase = torch.repeat_interleave(phase, 2, dim=-1)
     cos = phase.cos()[None, None, :, :].to(x.dtype)
     sin = phase.sin()[None, None, :, :].to(x.dtype)
@@ -58,17 +58,28 @@ class CausalAttention(nn.Module):
         self.out = nn.Linear(cfg.d_model, cfg.d_model, bias=False)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.attend(x)[0]
+
+    def attend(self, x, past=None):
         b, t, c = x.shape
         q, k, v = self.qkv(x).chunk(3, dim=-1)
         q = q.view(b, t, self.n_heads, c // self.n_heads).transpose(1, 2)
         k = k.view(b, t, self.n_heads, c // self.n_heads).transpose(1, 2)
         v = v.view(b, t, self.n_heads, c // self.n_heads).transpose(1, 2)
-        q, k = apply_rope(q), apply_rope(k)
+        offset = 0 if past is None else past[0].size(-2)
+        q, k = apply_rope(q, offset), apply_rope(k, offset)
+        mask = None
+        if past is not None:
+            k = torch.cat((past[0], k), dim=-2)
+            v = torch.cat((past[1], v), dim=-2)
+            if t > 1:
+                mask = torch.arange(k.size(-2), device=x.device)[None, :] <= (
+                    offset + torch.arange(t, device=x.device)[:, None])
         y = F.scaled_dot_product_attention(
-            q, k, v, is_causal=True,
+            q, k, v, attn_mask=mask, is_causal=past is None,
             dropout_p=self.dropout if self.training else 0.0
         )
-        return self.out(y.transpose(1, 2).contiguous().view(b, t, c))
+        return self.out(y.transpose(1, 2).contiguous().view(b, t, c)), (k, v)
 
 
 class SwiGLU(nn.Module):
@@ -95,6 +106,12 @@ class TransformerBlock(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = x + self.dropout(self.attn(self.attn_norm(x)))
         return x + self.dropout(self.ffn(self.ffn_norm(x)))
+
+
+    def cached(self, x, past=None):
+        y, cache = self.attn.attend(self.attn_norm(x), past)
+        x = x + self.dropout(y)
+        return x + self.dropout(self.ffn(self.ffn_norm(x))), cache
 
 
 class Aetherion(nn.Module):
@@ -140,4 +157,53 @@ class Aetherion(nn.Module):
                 scores = scores.masked_fill(scores < cutoff, -float("inf"))
             next_token = torch.multinomial(F.softmax(scores, dim=-1), 1)
             prompt = torch.cat([prompt, next_token], dim=1)
+        return prompt
+
+    @torch.inference_mode()
+    def forward_cached(self, token_ids, cache=None):
+        """Inference-only KV cache; positions are relative to the current window."""
+        if self.training:
+            raise ValueError("KV caching requires eval mode")
+        if token_ids.ndim != 2 or token_ids.size(1) == 0:
+            raise ValueError("Expected nonempty [batch, time] tokens")
+        if cache is not None and len(cache) != len(self.blocks):
+            raise ValueError("Invalid cache layer count")
+        past_len = 0 if cache is None else cache[0][0].size(-2)
+        if past_len + token_ids.size(1) > self.cfg.block_size:
+            raise ValueError("Cached context exceeds configured window")
+        x = self.embed(token_ids)
+        new_cache = []
+        for i, block in enumerate(self.blocks):
+            x, layer_cache = block.cached(x, None if cache is None else cache[i])
+            new_cache.append(layer_cache)
+        return self.lm_head(self.norm(x)), tuple(new_cache)
+
+    @torch.inference_mode()
+    def generate_cached(self, prompt, max_new_tokens=80, temperature=0.8,
+                        top_k=50, eos_id=None):
+        """Single-sequence decoding; rebuild cache when sliding window shifts."""
+        if prompt.ndim != 2 or prompt.size(0) != 1 or prompt.size(1) == 0:
+            raise ValueError("Expected one nonempty prompt")
+        if max_new_tokens < 0 or not math.isfinite(temperature) or temperature < 0:
+            raise ValueError("Invalid sampling options")
+        self.eval()
+        cache = None
+        for _ in range(max_new_tokens):
+            if cache is None or cache[0][0].size(-2) >= self.cfg.block_size:
+                x = prompt[:, -self.cfg.block_size:]
+                logits, cache = self.forward_cached(x)
+            else:
+                logits, cache = self.forward_cached(prompt[:, -1:], cache)
+            scores = logits[:, -1, :]
+            if temperature == 0:
+                token = scores.argmax(dim=-1, keepdim=True)
+            else:
+                scores = scores / temperature
+                if 0 < top_k < scores.size(-1):
+                    cutoff = torch.topk(scores, top_k).values[:, -1, None]
+                    scores = scores.masked_fill(scores < cutoff, -float("inf"))
+                token = torch.multinomial(F.softmax(scores, dim=-1), 1)
+            prompt = torch.cat((prompt, token), dim=1)
+            if eos_id is not None and token.item() == eos_id:
+                break
         return prompt
