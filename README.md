@@ -160,6 +160,21 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M28: benchmark-backed 125M execution safety gate
+
+The `pilot_train.py` dry-run remains available with approved dataset,
+review and verified tokenizer. To actually use `--execute`, M28 requires
+a **user-supplied matching 125M hardware benchmark report** (at least
+three measured synthetic optimizer updates), an explicit indexed CUDA/XPU
+device, and a declared accelerator peak-reserved-memory budget. A missing,
+mismatched or over-budget report rejects the run before training starts.
+
+The `benchmark_training.py --output ...` command writes report JSON
+without overwriting existing evidence. These are measured-report format
+checks, **not independently authenticated GPU measurements** or proof
+of available memory, language quality, or pretrained weights. See
+[M28 accelerator benchmark preflight](docs/M28_HARDWARE_BENCHMARK_GATE.md).
+
 ## M27: Production training contamination gate
 
 The 125M pilot launcher and non-demo held-out checkpoint comparator now
