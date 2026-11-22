@@ -15,7 +15,7 @@ from pathlib import Path
 import torch
 from torch import nn
 
-from .model import Aetherion, ModelConfig, apply_rope
+from .model import Aetherion, ModelConfig
 from .presets import parameter_breakdown
 
 
@@ -37,6 +37,20 @@ class MobileNextLogits(nn.Module):
             raise ValueError("window must be between 2 and the model's block_size")
         self.model = model.eval()
         self.window = window
+        # Precompute constant-window RoPE before ONNX tracing. Dynamic arange/
+        # repeat_interleave lowering can yield incompatible inferred shapes.
+        head_width = model.cfg.d_model // model.cfg.n_heads
+        inv_freq = 1.0 / (
+            10000 ** (torch.arange(0, head_width, 2, dtype=torch.float32) / head_width)
+        )
+        phase = torch.outer(torch.arange(window, dtype=torch.float32), inv_freq)
+        phase = torch.repeat_interleave(phase, 2, dim=-1)
+        self.register_buffer(
+            "rope_cos", phase.cos().reshape(1, 1, window, head_width), persistent=False
+        )
+        self.register_buffer(
+            "rope_sin", phase.sin().reshape(1, 1, window, head_width), persistent=False
+        )
         self.register_buffer(
             "causal_mask",
             torch.ones(window, window, dtype=torch.bool).tril().view(1, 1, window, window),
@@ -54,7 +68,10 @@ class MobileNextLogits(nn.Module):
             query = query.reshape(batch, length, heads, head_width).transpose(1, 2)
             key = key.reshape(batch, length, heads, head_width).transpose(1, 2)
             value = value.reshape(batch, length, heads, head_width).transpose(1, 2)
-            query, key = apply_rope(query), apply_rope(key)
+            rotated_q = torch.stack((-query[..., 1::2], query[..., 0::2]), dim=-1).flatten(-2)
+            rotated_k = torch.stack((-key[..., 1::2], key[..., 0::2]), dim=-1).flatten(-2)
+            query = query * self.rope_cos + rotated_q * self.rope_sin
+            key = key * self.rope_cos + rotated_k * self.rope_sin
             scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(head_width)
             scores = scores.masked_fill(~self.causal_mask, torch.finfo(scores.dtype).min)
             probabilities = torch.softmax(scores, dim=-1)
