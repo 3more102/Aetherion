@@ -122,3 +122,22 @@ def screen_cross_split(
             "An empty finding list is not evidence of clean training data."
         ),
     }
+
+
+def require_no_cross_split_findings(
+    directory: str | Path,
+    allowed_licenses: list[str] | set[str],
+) -> dict:
+    """Fail closed for real training/evaluation on lexical split findings.
+
+    A zero-finding result is only a bounded lexical check. It does not
+    authorize data rights, privacy, quality or benchmark contamination.
+    """
+    report = screen_cross_split(directory, allowed_licenses)
+    if report["requires_manual_review"]:
+        raise ValueError(
+            "Cross-split lexical contamination screen found "
+            f"{report['findings_count']} high-overlap pairs; "
+            "resolve the source data and reprepare splits before real training/evaluation"
+        )
+    return report
