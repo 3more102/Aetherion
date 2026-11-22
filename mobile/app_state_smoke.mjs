@@ -42,6 +42,10 @@ const m19 = {
   },
 };
 assert.equal(validateManifest(m19).schema_version, 2);
+assert.doesNotThrow(() => context.enforceImportBudget(m19, 16, 16));
+assert.throws(() => context.enforceImportBudget(m19, 16, 0), /decode/i);
+assert.throws(() => context.enforceImportBudget(m19, 256 * 1024 * 1024, 1), /256 MiB/);
+assert.throws(() => context.enforceImportBudget(m19, NaN, 1), /valid nonempty/i);
 assert.throws(() => validateManifest({ ...m19, cache_policy: "unlimited" }));
 assert.throws(() => validateManifest({
   ...m19, graphs: { ...m19.graphs, decode: { filename: "decode.onnx", sha256: "bad" } },

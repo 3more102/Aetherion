@@ -18,6 +18,7 @@ STATIC = (
     "index.html",
     "app.js",
     "model-vault.js",
+    "device-check.js",
     "sw.js",
     "manifest.webmanifest",
     "icon.svg",
