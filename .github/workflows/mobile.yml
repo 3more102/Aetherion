@@ -24,6 +24,7 @@ jobs:
       - run: node mobile/benchmark_smoke.mjs
       - run: node mobile/model_vault_smoke.mjs
       - run: node mobile/model_vault_ui_smoke.mjs
+      - run: node mobile/device_check_smoke.mjs
       - run: python mobile/package_pwa.py --output mobile/dist/aetherion-mobile-pwa.zip
       - run: python -m zipfile -t mobile/dist/aetherion-mobile-pwa.zip
       - uses: actions/upload-artifact@v4

@@ -117,6 +117,20 @@ function isCachedManifest(manifest) {
   return manifest.schema_version === 2 || manifest.schema_version === 3;
 }
 
+// Fail before reading ONNX bytes or allocating sessions on large imports.
+function enforceImportBudget(manifest, prefillSize, decodeSize = 0) {
+  if (!Number.isSafeInteger(prefillSize) || prefillSize <= 0 ||
+      !Number.isSafeInteger(decodeSize) || decodeSize < 0) {
+    throw new Error("Model files must have valid nonempty byte sizes.");
+  }
+  if (isCachedManifest(manifest) && decodeSize === 0) {
+    throw new Error("Cached models require a nonempty decode ONNX graph.");
+  }
+  if (prefillSize + decodeSize > 256 * 1024 * 1024) {
+    throw new Error("Combined ONNX model exceeds the 256 MiB import safety limit.");
+  }
+}
+
 function resetCache() {
   state.cache = null;
   state.cacheLength = 0;
@@ -161,11 +175,22 @@ async function loadModel(source = null) {
     }
     status("Verifying model files...");
     const loadingStart = performance.now();
+    if (!fromStorage && manifestFile.size > 128 * 1024) {
+      throw new Error("Model manifest exceeds the 128 KiB import limit.");
+    }
+    if (fromStorage && (typeof source.manifestText !== "string" ||
+        source.manifestText.length > 128 * 1024)) {
+      throw new Error("Stored model manifest exceeds the 128 KiB limit.");
+    }
     const manifest = validateManifest(JSON.parse(
       fromStorage ? source.manifestText : await manifestFile.text()));
     if (isCachedManifest(manifest) && !fromStorage && !decodeFile) {
       throw new Error("M19 requires decode.onnx in addition to prefill.onnx.");
     }
+    enforceImportBudget(manifest,
+      fromStorage ? source.prefillBytes?.byteLength : onnxFile.size,
+      isCachedManifest(manifest) ?
+        (fromStorage ? source.decodeBytes?.byteLength : decodeFile.size) : 0);
     const firstBytes = fromStorage ? source.prefillBytes : await onnxFile.arrayBuffer();
     const firstSha = isCachedManifest(manifest) ?
       manifest.graphs.prefill.sha256 : manifest.onnx_sha256;
@@ -557,6 +582,17 @@ async function generate() {
   }
 }
 
+$("check-device").addEventListener("click", async () => {
+  $("check-device").disabled = true;
+  try {
+    const report = await deviceCheck.inspect();
+    $("device-report").textContent = JSON.stringify(report, null, 2);
+  } catch (error) {
+    $("device-report").textContent = "Local device check failed: " + error.message;
+  } finally {
+    $("check-device").disabled = false;
+  }
+});
 $("load").addEventListener("click", () => loadModel());
 $("save-model").addEventListener("click", saveLoadedModel);
 $("restore-model").addEventListener("click", restoreSavedModel);

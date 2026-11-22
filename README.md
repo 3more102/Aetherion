@@ -100,6 +100,17 @@ the browser. Restored models must pass the usual SHA and graph checks. No
 trained assistant model is supplied. See the
 [M23 local model guide](docs/M23_LOCAL_MODEL_VAULT.md).
 
+## M23–M24 mobile reliability
+
+M23 adds **opt-in local storage** of SHA-256-verified ONNX exports, with
+revalidation on restore. M24 adds a **local device API readiness check**
+(no telemetry) and early 256 MiB ONNX / 128 KiB manifest import limits.
+API readiness is not proof of phone compatibility, sufficient RAM,
+successful inference, or useful language ability.
+
+See [M23 stored model vault](docs/M23_LOCAL_MODEL_VAULT.md) and
+[M24 device readiness and size limits](docs/M24_DEVICE_READINESS.md).
+
 ## Documentation
 
 - [Eight-week execution plan (priorities, exit gates, risks)](docs/EXECUTION_PLAN.md)

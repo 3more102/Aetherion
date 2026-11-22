@@ -36,6 +36,12 @@
   </section>
   <p>Experimental on-device text generation for Android and iPhone browsers. The model runs on your phone using WebAssembly, not a remote inference server.</p>
   <section>
+    <h2>Device readiness (M24)</h2>
+    <button id="check-device" type="button">Check this device</button>
+    <pre id="device-report" role="status" aria-live="polite">No device check has been run.</pre>
+    <p class="muted">Local API check only, with no upload or device fingerprint. A pass does not verify free memory, ONNX execution, offline storage, or physical phone performance.</p>
+  </section>
+  <section>
     <h2>1. Load a checkpoint export</h2>
     <label for="onnx">M17/M18 model.onnx, M19 prefill.onnx, or M20 prefill.int4.onnx</label>
     <input id="onnx" type="file" accept=".onnx" autocomplete="off">
@@ -44,7 +50,7 @@
     <label for="manifest">manifest.json</label>
     <input id="manifest" type="file" accept=".json" autocomplete="off">
     <button id="load" type="button">Verify &amp; load model</button>
-    <p class="muted">Files stay on your device. Cached mode requires a matching prefill and decode ONNX pair plus manifest.json. M20 INT4 uses prefill.int4.onnx and decode.int4.onnx. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
+    <p class="muted">Files stay on your device. Cached mode requires a matching prefill and decode ONNX pair plus manifest.json. M20 INT4 uses prefill.int4.onnx and decode.int4.onnx. SHA-256 validation rejects mismatched files. Imports are limited to 256 MiB of ONNX graphs and a 128 KiB manifest, not a peak-RAM guarantee. The first app install requires the local runtime files.</p>
   </section>
   <section>
     <h2>2. Optional device-local model storage</h2>
@@ -76,6 +82,7 @@
 </main>
 <script src="./vendor/ort.wasm.min.js"></script>
 <script src="./model-vault.js" defer></script>
+<script src="./device-check.js" defer></script>
 <script src="./app.js" defer></script>
 </body>
 </html>

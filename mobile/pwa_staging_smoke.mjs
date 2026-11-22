@@ -85,7 +85,7 @@ let install;
 listeners.install({ waitUntil(promise) { install = promise; } });
 await install;
 assert.ok(skipped);
-const stored = databases.get("aetherion-mobile-m23-v1");
+const stored = databases.get("aetherion-mobile-m24-v1");
 assert.ok(stored);
 for (const path of inventory.assets) {
   assert.ok(stored.has(path), "Runtime not precached for offline use: " + path);
@@ -126,6 +126,7 @@ listeners.fetch({
 assert.ok(shellResponse);
 assert.ok((await shellResponse).ok, "Known app script should serve from offline precache");
 assert.ok(stored.has("./model-vault.js"), "IndexedDB vault script must be bundled for offline use");
+assert.ok(stored.has("./device-check.js"), "Device preflight must be bundled for offline use");
 
 assert.ok(networkRequests >= 1);
 console.log("M21 PWA PNG, offline runtime, scoped cache cleanup and no-model-cache smoke passed");
