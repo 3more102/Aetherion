@@ -87,3 +87,72 @@ try {
   await decode.release();
   await legacy.release();
 }
+
+
+// M20: FP32 vs INT4 cached prefill + multiple real cached decode steps.
+// Both quantized and reference paths carry their *own* evolving K/V tensors.
+const int4Root = join(root, "cached_int4");
+const paths = {
+  fp32: join(root, "cached"),
+  int4: int4Root,
+};
+const instances = {};
+for (const [kind, path] of Object.entries(paths)) {
+  instances[kind] = {
+    prefill: await ort.InferenceSession.create(
+      new Uint8Array(readFileSync(join(path, "prefill.onnx"))),
+      { executionProviders: ["wasm"] }),
+    decode: await ort.InferenceSession.create(
+      new Uint8Array(readFileSync(join(path, "decode.onnx"))),
+      { executionProviders: ["wasm"] }),
+  };
+}
+try {
+  const padded = new BigInt64Array(8);
+  padded[0] = 65n; padded[1] = 66n;
+  const heads = {};
+  for (const [kind, sessions] of Object.entries(instances)) {
+    heads[kind] = await sessions.prefill.run({
+      tokens: new ort.Tensor("int64", padded, [1, 8]),
+      last_position: new ort.Tensor("int64", BigInt64Array.of(1n), [1]),
+    });
+    assert.equal(heads[kind].next_logits.data.length, 256);
+  }
+  let maxError = 0;
+  let count = 0;
+  const compare = () => {
+    const a = heads.fp32.next_logits.data, b = heads.int4.next_logits.data;
+    assert.equal(a.length, 256);
+    assert.equal(b.length, 256);
+    const diff = Array.from(a).reduce((m, v, i) => Math.max(m, Math.abs(v - b[i])), 0);
+    assert.ok(Number.isFinite(diff));
+    maxError = Math.max(maxError, diff);
+    count++;
+  };
+  compare();
+  for (let position = 2; position <= 5; position++) {
+    const token = BigInt(66 + position);
+    for (const [kind, sessions] of Object.entries(instances)) {
+      const feeds = {
+        token_ids: new ort.Tensor("int64", BigInt64Array.of(token), [1, 1]),
+        past_length: new ort.Tensor("int64", BigInt64Array.of(BigInt(position)), [1]),
+      };
+      for (let i = 0; i < 2; i++) {
+        feeds["past_key_" + i] = heads[kind]["key_" + i];
+        feeds["past_value_" + i] = heads[kind]["value_" + i];
+      }
+      heads[kind] = await sessions.decode.run(feeds);
+    }
+    compare();
+  }
+  // This threshold applies only to the fixed synthetic fixture, not to
+  // arbitrary trained weights or a guarantee of generated-text parity.
+  assert.ok(maxError < 0.5, "M20 synthetic WebAssembly drift too large: " + maxError);
+  console.log("M20 INT4 + KV-cache WASM sequence OK:", count,
+    "samples; max absolute synthetic logit difference", maxError);
+} finally {
+  for (const pair of Object.values(instances)) {
+    await pair.prefill.release();
+    await pair.decode.release();
+  }
+}
