@@ -98,10 +98,12 @@ def test_group_must_not_mix_export_or_context():
     base = [sample() for _ in range(3)]
     candidate = [sample("int4_kv_cache", model="b") for _ in range(3)]
     base[2]["model_sha256"] = "d" * 64
+    base[2]["source_model_sha256"] = "d" * 64
     with pytest.raises(ValueError, match="mix model_sha256"):
         compare_reports(base, candidate)
 
     base[2]["model_sha256"] = "a" * 64
+    base[2]["source_model_sha256"] = "a" * 64
     base[2]["window_byte_tokens"] = 16
     with pytest.raises(ValueError, match="mix window"):
         compare_reports(base, candidate)
