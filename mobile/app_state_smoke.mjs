@@ -24,6 +24,8 @@ const context = createContext({
     },
   },
 });
+new Script(readFileSync(new URL("./model-vault.js", import.meta.url), "utf8"),
+  { filename: "model-vault.js" }).runInContext(context);
 const script = readFileSync(new URL("./app.js", import.meta.url), "utf8");
 new Script(script, { filename: "app.js" }).runInContext(context);
 
