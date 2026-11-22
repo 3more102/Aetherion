@@ -52,12 +52,13 @@ function validateManifest(manifest) {
 async function loadModel() {
   if (state.running) return;
   setRunning(true);
-  if (state.session) await state.session.release();
+  const oldSession = state.session;
   state.session = null;
   state.manifest = null;
   const onnxFile = $("onnx").files[0];
   const manifestFile = $("manifest").files[0];
   try {
+    if (oldSession) await oldSession.release();
     if (!onnxFile || !manifestFile) {
       throw new Error("Select both model.onnx and manifest.json.");
     }
