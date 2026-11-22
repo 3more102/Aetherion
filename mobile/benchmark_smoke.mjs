@@ -28,13 +28,16 @@ const sha = "a".repeat(64);
 state.manifest = {
   schema_version: 3, window: 8, n_layers: 2, n_heads: 4, head_dim: 8,
   graphs: { prefill: { sha256: sha }, decode: { sha256: sha } },
+  source_graphs: { prefill: { sha256: "b".repeat(64) } },
 };
 state.modelBytes = 200811;
 state.modelLoadAndVerifyMs = 1500;
 state.cacheStats = { prefill: 3, decode: 17 };
 const phases = { prefill: [20, 30], decode: [2, 4, 6], full_window: [] };
 const report = context.displayBenchmark(phases, 2, 62, 64000, 120000, false);
-assert.equal(report.schema_version, 2);
+assert.equal(report.schema_version, 3);
+assert.equal(report.benchmark_protocol, "hi_warmup2_16byte_greedy_v1");
+assert.equal(report.source_model_sha256, "b".repeat(64));
 assert.equal(report.inference_format, "int4_kv_cache");
 assert.equal(report.measured_steps, 5);
 assert.equal(report.warmup_steps_completed, 2);
@@ -52,7 +55,7 @@ assert.equal(report.device.user_agent, "Synthetic test browser");
 assert.equal(nodes.get("download-report").disabled, false);
 assert.equal(state.lastBenchmark, report);
 const serialized = nodes.get("benchmark-report").textContent;
-assert.equal(JSON.parse(serialized).schema_version, 2);
+assert.equal(JSON.parse(serialized).schema_version, 3);
 assert.ok(!serialized.includes("my private prompt"));
 assert.ok(!serialized.includes("ONNX weights"));
 
@@ -61,6 +64,7 @@ const legacy = context.displayBenchmark({
   prefill: [], decode: [], full_window: [10, 10, 20],
 }, 1, 40, null, null, false);
 assert.equal(legacy.inference_format, "fp32_full_window");
+assert.equal(legacy.source_model_sha256, sha);
 assert.equal(legacy.memory.estimated_one_copy_fp32_kv_cache_bytes, 0);
 assert.equal(legacy.latency_ms.full_window.p95_ms, 20);
 assert.equal(legacy.latency_ms.decode, null);
