@@ -27,12 +27,14 @@
   <p>Experimental on-device text generation for Android and iPhone browsers. The model runs on your phone using WebAssembly, not a remote inference server.</p>
   <section>
     <h2>1. Load a checkpoint export</h2>
-    <label for="onnx">model.onnx</label>
+    <label for="onnx">M17/M18 model.onnx or M19 prefill.onnx</label>
     <input id="onnx" type="file" accept=".onnx" autocomplete="off">
+    <label for="decode">M19 only: decode.onnx (required for cached mode)</label>
+    <input id="decode" type="file" accept=".onnx" autocomplete="off">
     <label for="manifest">manifest.json</label>
     <input id="manifest" type="file" accept=".json" autocomplete="off">
     <button id="load" type="button">Verify &amp; load model</button>
-    <p class="muted">Files stay on your device. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
+    <p class="muted">Files stay on your device. M19 requires prefill.onnx, decode.onnx, and manifest.json. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
   </section>
   <section>
     <h2>2. Generate locally</h2>
