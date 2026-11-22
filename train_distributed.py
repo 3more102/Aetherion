@@ -4,6 +4,8 @@ Run with torchrun; all ranks read identical data, sample independently and
 synchronize gradients. No optimizer sharding or multi-node support claimed.
 """
 import argparse
+import json
+from hashlib import sha256
 from contextlib import nullcontext
 from dataclasses import asdict, replace
 from datetime import timedelta
@@ -69,10 +71,15 @@ def run(args):
         raise ValueError("Large preset requires --allow-large after memory assessment")
     dist.init_process_group(backend=backend, timeout=timedelta(minutes=5))
     try:
-        # Every rank must see the same dataset fingerprint.
-        all_hashes = [None] * world
-        dist.all_gather_object(all_hashes, fingerprints)
-        if any(item != fingerprints for item in all_hashes):
+        # Compare fixed-size SHA-256 digests with tensor collectives. Unlike
+        # all_gather_object this needs neither NumPy nor unsafe pickle decoding.
+        local_fingerprint = sha256(json.dumps(
+            fingerprints, sort_keys=True, separators=(",", ":"),
+        ).encode("utf-8")).digest()
+        local_digest = torch.tensor(list(local_fingerprint), dtype=torch.uint8, device=device)
+        gathered = [torch.empty_like(local_digest) for _ in range(world)]
+        dist.all_gather(gathered, local_digest)
+        if any(not torch.equal(peer, local_digest) for peer in gathered):
             raise ValueError("Dataset fingerprints differ across ranks")
         torch.manual_seed(args.seed)
         raw = Aetherion(cfg).to(device)
