@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#102536">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icon.svg" type="image/svg+xml">
+  <title>Aetherion Mobile</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#0c1925;color:#eaf3ff}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:start center;padding:clamp(15px,4vw,32px)}
+    main{width:min(100%,640px)}h1{font-size:1.8rem;margin:.4em 0}p{color:#bfd0df;line-height:1.5}
+    section{background:#152a3c;border:1px solid #2d485d;border-radius:15px;padding:18px;margin:16px 0}
+    label{display:block;margin:13px 0 6px;font-weight:600}input,textarea,button{font:inherit}
+    input[type=file],input[type=number],textarea{display:block;width:100%;padding:12px;background:#0c1925;color:#f4f8fb;border:1px solid #466175;border-radius:9px}
+    textarea{min-height:100px;resize:vertical}button{padding:12px 16px;background:#62d7c6;color:#051f26;border:0;border-radius:9px;font-weight:700;margin:12px 7px 0 0}
+    button:disabled{opacity:.45}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #ffd166;outline-offset:2px}
+    #status{border-left:3px solid #62d7c6;padding:12px;background:#102638;overflow-wrap:anywhere}
+    #status.error{border-color:#ff8e8e}#output{white-space:pre-wrap;overflow-wrap:anywhere;min-height:80px;line-height:1.5}
+    small{color:#a9c3d8}.muted{font-size:.9rem}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Aetherion Mobile</h1>
+  <p>Experimental on-device text generation for Android and iPhone browsers. The model runs on your phone using WebAssembly, not a remote inference server.</p>
+  <section>
+    <h2>1. Load a checkpoint export</h2>
+    <label for="onnx">model.onnx</label>
+    <input id="onnx" type="file" accept=".onnx" autocomplete="off">
+    <label for="manifest">manifest.json</label>
+    <input id="manifest" type="file" accept=".json" autocomplete="off">
+    <button id="load" type="button">Verify &amp; load model</button>
+    <p class="muted">Files stay on your device. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
+  </section>
+  <section>
+    <h2>2. Generate locally</h2>
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" spellcheck="false" placeholder="Hello Aetherion"></textarea>
+    <label for="count">New byte tokens (1–64)</label>
+    <input id="count" type="number" min="1" max="64" value="12">
+    <button id="generate" type="button" disabled>Generate</button>
+    <button id="stop" type="button" disabled>Stop</button>
+    <p id="status" role="status" aria-live="polite"></p>
+    <h3>Output</h3>
+    <div id="output" aria-live="off"></div>
+  </section>
+  <p class="muted">Research preview: Aetherion does not currently ship a validated conversational model. Random or minimally trained checkpoints may produce meaningless characters. Runs only on modern WebAssembly-compatible phones with adequate memory.</p>
+</main>
+<script src="./vendor/ort.min.js"></script>
+<script src="./app.js" defer></script>
+</body>
+</html>
