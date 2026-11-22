@@ -59,7 +59,7 @@
     <h3>Output</h3>
     <div id="output" aria-live="off"></div>
     <h3>Local device benchmark</h3>
-    <p class="muted">Run separately with the FP32 and INT4 exports of the same checkpoint. The report separates prefill and cached decoding, includes optional browser heap readings (not device peak RAM), and measures UTF-8 byte tokens rather than BPE tokens. Nothing is uploaded.</p>
+    <p class="muted">Run separately with the FP32 and INT4 exports of the same checkpoint. The report separates prefill and cached decoding, includes a source-model fingerprint for verified FP32/INT4 pairing, and measures UTF-8 byte tokens, not BPE tokens. Export three independent trials per variant for the local M22 comparison CLI. Nothing is uploaded.</p>
     <button id="download-report" type="button" disabled>Save benchmark JSON</button>
     <pre id="benchmark-report" aria-label="Mobile benchmark JSON report"></pre>
   </section>
