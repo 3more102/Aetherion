@@ -39,6 +39,7 @@ const listeners = {};
 const databases = new Map([
   ["unrelated-cache", new Map([["do-not-remove", "unrelated"]])],
   ["aetherion-mobile-m20-v1", new Map()],
+  ["aetherion-mobile-m24-v1", new Map()],
 ]);
 const cacheMock = (name) => {
   if (!databases.has(name)) databases.set(name, new Map());
@@ -85,7 +86,7 @@ let install;
 listeners.install({ waitUntil(promise) { install = promise; } });
 await install;
 assert.ok(skipped);
-const stored = databases.get("aetherion-mobile-m24-v1");
+const stored = databases.get("aetherion-mobile-m26-v1");
 assert.ok(stored);
 for (const path of inventory.assets) {
   assert.ok(stored.has(path), "Runtime not precached for offline use: " + path);
@@ -96,6 +97,7 @@ await activation;
 assert.ok(activated);
 assert.ok(databases.has("unrelated-cache"), "Unrelated caches must not be removed");
 assert.ok(!databases.has("aetherion-mobile-m20-v1"), "Old Aetherion cache must be removed");
+assert.ok(!databases.has("aetherion-mobile-m24-v1"), "M24 cache must be removed after upgrade");
 let modelIntercepted = false;
 listeners.fetch({
   request: { method: "GET", url: "https://example.test/mobile/model.onnx", mode: "same-origin" },
