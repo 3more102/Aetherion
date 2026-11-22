@@ -14,7 +14,7 @@ for (const filename of readdirSync(source)) {
     copied++;
   }
 }
-if (!existsSync(join(target, "ort.min.js")) || !copied) {
-  throw new Error("Expected ort.min.js missing; inspect the pinned package distribution.");
+if (!existsSync(join(target, "ort.wasm.min.js")) || !copied) {
+  throw new Error("Expected ort.wasm.min.js missing; inspect the pinned package distribution.");
 }
 console.log("Staged " + copied + " ONNX Runtime assets to mobile/vendor");
