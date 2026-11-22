@@ -111,6 +111,21 @@ successful inference, or useful language ability.
 See [M23 stored model vault](docs/M23_LOCAL_MODEL_VAULT.md) and
 [M24 device readiness and size limits](docs/M24_DEVICE_READINESS.md).
 
+## M26: conservative mobile runtime shape preflight
+
+The mobile app now rejects context windows above 4096 byte tokens,
+cached models above 48 layers / 64 heads / head dimensions of 256,
+and manifests projecting more than 64 MiB for **one logical FP32
+K/V-cache copy**. These checks run before reading ONNX graph bytes or
+creating inference sessions, apply equally to restored local models,
+and retain legacy M17/M18 exports within limits. Model-loading status
+reports estimated cache size.
+
+The estimate excludes graph weights, temporary tensors, duplicate cache
+copies, WASM allocations, browser overhead and other memory; **passing
+these checks does not guarantee a model will run on a phone**. See
+[M26 mobile execution guardrails](docs/M26_MOBILE_RUNTIME_BUDGET.md).
+
 ## Documentation
 
 - [Eight-week execution plan (priorities, exit gates, risks)](docs/EXECUTION_PLAN.md)

@@ -110,11 +110,38 @@ function validateManifest(manifest) {
   } else {
     throw new Error("Unsupported mobile manifest version.");
   }
+  enforceRuntimeShapeBudget(manifest);
   return manifest;
 }
 
 function isCachedManifest(manifest) {
   return manifest.schema_version === 2 || manifest.schema_version === 3;
+}
+
+// M26: Conservative manifest shape limits. These are import-time guardrails,
+// not measured peak RAM limits or claims about compatibility with a phone.
+const MAX_MOBILE_WINDOW = 4096;
+const MAX_MOBILE_ONE_COPY_KV_BYTES = 64 * 1024 * 1024;
+
+function estimatedKvCacheBytes(manifest) {
+  if (!isCachedManifest(manifest)) return 0;
+  return 2 * manifest.n_layers * manifest.n_heads *
+    manifest.head_dim * manifest.window * 4; // K + V, FP32, one logical copy
+}
+
+function enforceRuntimeShapeBudget(manifest) {
+  if (manifest.window > MAX_MOBILE_WINDOW) {
+    throw new Error("Mobile context window exceeds the 4096-byte-token limit.");
+  }
+  if (!isCachedManifest(manifest)) return 0;
+  if (manifest.n_layers > 48 || manifest.n_heads > 64 || manifest.head_dim > 256) {
+    throw new Error("Cached model dimensions exceed mobile safety limits.");
+  }
+  const bytes = estimatedKvCacheBytes(manifest);
+  if (!Number.isSafeInteger(bytes) || bytes > MAX_MOBILE_ONE_COPY_KV_BYTES) {
+    throw new Error("Estimated one-copy FP32 KV cache exceeds the 64 MiB mobile safety limit.");
+  }
+  return bytes;
 }
 
 // Fail before reading ONNX bytes or allocating sessions on large imports.
@@ -231,8 +258,12 @@ async function loadModel(source = null) {
     const mode = manifest.schema_version === 3 ? "INT4 weights + FP32 KV cache" :
       manifest.schema_version === 2 ? "FP32 + KV cache" :
       (manifest.quantization ? "INT4 full-window" : "FP32 full-window");
+    const cacheNote = isCachedManifest(manifest) ?
+      " Estimated one-copy FP32 KV cache " +
+      (estimatedKvCacheBytes(manifest) / (1024 * 1024)).toFixed(2) +
+      " MiB (actual runtime memory may be much higher)." : "";
     status("Model loaded locally. Window " + manifest.window + " bytes; " + mode +
-           ". Conversation quality depends on your actual checkpoint.");
+           "." + cacheNote + " Conversation quality depends on your actual checkpoint.");
   } catch (error) {
     if (prefillSession) await prefillSession.release().catch(() => {});
     if (decodeSession) await decodeSession.release().catch(() => {});
@@ -427,9 +458,7 @@ function sourceModelSha256(manifest) {
 function displayBenchmark(phases, warmups, elapsedMs, memoryBefore, memoryAfter, interrupted) {
   const all = [...phases.prefill, ...phases.decode, ...phases.full_window];
   const measured = all.length;
-  const cacheBytes = isCachedManifest(state.manifest) ?
-    2 * state.manifest.n_layers * state.manifest.n_heads *
-      state.manifest.window * state.manifest.head_dim * 4 : 0;
+  const cacheBytes = estimatedKvCacheBytes(state.manifest);
   const report = {
     schema_version: 3,
     kind: "aetherion-mobile-local-browser-inference-benchmark",

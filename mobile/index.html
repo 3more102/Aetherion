@@ -50,7 +50,7 @@
     <label for="manifest">manifest.json</label>
     <input id="manifest" type="file" accept=".json" autocomplete="off">
     <button id="load" type="button">Verify &amp; load model</button>
-    <p class="muted">Files stay on your device. Cached mode requires a matching prefill and decode ONNX pair plus manifest.json. M20 INT4 uses prefill.int4.onnx and decode.int4.onnx. SHA-256 validation rejects mismatched files. Imports are limited to 256 MiB of ONNX graphs and a 128 KiB manifest, not a peak-RAM guarantee. The first app install requires the local runtime files.</p>
+    <p class="muted">Files stay on your device. Cached mode requires a matching prefill and decode ONNX pair plus manifest.json. M20 INT4 uses prefill.int4.onnx and decode.int4.onnx. SHA-256 validation rejects mismatched files. Imports are limited to 256 MiB of ONNX graphs, a 128 KiB manifest, a 4096-byte-token context, and an estimated 64 MiB for one FP32 KV-cache copy. The limits are preflight guards, not peak-RAM guarantees. The first app install requires the local runtime files.</p>
   </section>
   <section>
     <h2>2. Optional device-local model storage</h2>

@@ -90,6 +90,23 @@ assert.throws(() => validateManifest({ ...m20, graphs: m19.graphs }));
 assert.throws(() => validateManifest({ ...m20, source_graphs: undefined }));
 assert.throws(() => validateManifest({ ...m19, quantization: m20.quantization }));
 
+// M26: untrusted shape values must fail before loading ONNX graph bytes.
+assert.equal(context.estimatedKvCacheBytes(m19), 2 * 1 * 4 * 8 * 4 * 4);
+assert.equal(context.estimatedKvCacheBytes(v1), 0);
+assert.equal(context.enforceRuntimeShapeBudget(m19), 1024);
+assert.equal(validateManifest({ ...v1, window: 4096 }).window, 4096);
+assert.throws(() => validateManifest({ ...v1, window: 4097 }), /4096/);
+assert.throws(() => validateManifest({ ...m19, window: 4097 }), /4096/);
+assert.throws(() => validateManifest({ ...m19, n_layers: 49 }), /dimensions/i);
+assert.throws(() => validateManifest({ ...m19, n_heads: 65 }), /dimensions/i);
+assert.throws(() => validateManifest({ ...m19, head_dim: 257 }), /dimensions/i);
+const giantCache = { ...m20, window: 1024, n_layers: 32,
+  n_heads: 32, head_dim: 128 };
+assert.throws(() => validateManifest(giantCache), /64 MiB/);
+assert.throws(() => validateManifest({ ...m19, window: 1 }), /Invalid Aetherion/);
+assert.equal(context.enforceRuntimeShapeBudget({ ...m19, window: 1024,
+  n_layers: 4, n_heads: 4, head_dim: 64 }), 2 * 4 * 4 * 64 * 1024 * 4);
+
 
 const state = new Script("state").runInContext(context);
 let firstCalls = 0, decodedCalls = 0;
