@@ -145,6 +145,21 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M25: Core-model data contamination screening
+
+The 125M research model is **still untrained**. Before authorizing any real
+training pilot, use the [M25 cross-split lexical screening guide](docs/M25_DATA_CONTAMINATION.md)
+to check the integrity of prepared data and flag potentially overlapping
+train/validation/test texts without uploading raw documents:
+
+```bash
+python screen_corpus.py data/processed/v1 --allow-license CC0-1.0
+```
+
+Findings produce exit code 2 by default. Even a zero-finding report is not
+proof of a legally authorized, private, benchmark-clean training corpus; a
+separate human review and provenance attestation are still mandatory.
+
 ## M17: Verified held-out training evidence
 
 After saving two checkpoints from the same training run, use [M17 checkpoint comparison](docs/M17_CHECKPOINT_COMPARISON.md) to verify corpus and tokenizer fingerprints, equal training settings and exact validation-token coverage before comparing perplexity. Real 125M comparisons require a reviewed corpus and 32k BPE artifact; `--demo` is explicitly limited to unreviewed byte-token fixtures. Passing CI or improving a synthetic sequence is **not** a claim of real pretrained language ability.
