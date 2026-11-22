@@ -14,7 +14,12 @@ FORMAT_VERSION = 2
 
 
 def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step, seed, data, hparams, overwrite=True):
-    """Write checkpoint atomically; opt-in snapshots reject existing paths.\n\n    overwrite=False uses a same-filesystem hard link from the fsynced temp\n    file, making destination creation atomic and exclusive. It requires\n    a filesystem that supports hard links.\n    """
+    """Write checkpoint atomically; opt-in snapshots reject existing paths.
+
+    overwrite=False uses a same-filesystem hard link from the fsynced temp
+    file, making destination creation atomic and exclusive. It requires
+    a filesystem that supports hard links.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -38,7 +43,11 @@ def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step,
             torch.save(payload, handle)
             handle.flush()
             os.fsync(handle.fileno())
-        if overwrite:\n            os.replace(temp_name, target)\n        else:\n            # Atomic create-if-absent: concurrent workers cannot overwrite a snapshot.\n            os.link(temp_name, target)
+        if overwrite:
+            os.replace(temp_name, target)
+        else:
+            # Atomic create-if-absent: concurrent workers cannot overwrite a snapshot.
+            os.link(temp_name, target)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
