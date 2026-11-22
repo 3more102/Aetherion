@@ -41,6 +41,13 @@ def pilot_command(args):
                "--device", args.device, "--output", args.output]
     if args.resume:
         command += ["--resume", args.resume]
+    if getattr(args, "retain_step_checkpoints", False):
+        command += ["--retain-step-checkpoints"]
+    save_every = getattr(args, "save_every", None)
+    if save_every is not None:
+        if type(save_every) is not int or save_every < 0:
+            raise ValueError("Pilot save-every must be a nonnegative integer")
+        command += ["--save-every", str(save_every)]
     return command
 
 
@@ -60,6 +67,10 @@ def main():
     p.add_argument("--precision", choices=("fp32", "bf16"), default="bf16")
     p.add_argument("--output", required=True)
     p.add_argument("--resume")
+    p.add_argument("--retain-step-checkpoints", action="store_true",
+                   help="Preserve separate numbered snapshots; requires available disk space")
+    p.add_argument("--save-every", type=int, default=None,
+                   help="Optional snapshot interval in optimizer steps; default is trainer's 50")
     p.add_argument("--benchmark-report", help="Local exact-configuration 125M accelerator benchmark JSON")
     p.add_argument("--max-peak-reserved-gib", type=float,
                    help="Explicit upper bound on measured accelerator peak reserved GiB")

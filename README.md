@@ -160,6 +160,23 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M30: Retained checkpoints and validation progression
+
+Training now supports the opt-in `--retain-step-checkpoints` flag to
+save uniquely numbered, no-overwrite snapshots rather than replacing
+one latest checkpoint. The new `audit_training_history.py` can
+re-evaluate 2–32 trusted checkpoints on identical held-out validation
+tokens, requiring matched dataset/tokenizer hashes, model config,
+seed, training hyperparameters and evaluation settings. Its report
+records per-step NLL/perplexity, changes from prior snapshots and
+best observed validation step.
+
+Snapshot creation requires a filesystem with hard-link support.
+Matching settings are **not proof of a shared training lineage**.
+Synthetic byte fixtures remain diagnostic only; no real 125M
+training result is implied. See
+[M30 checkpoint-history guide](docs/M30_CHECKPOINT_HISTORY.md).
+
 ## M29: Per-checkpoint validation evidence
 
 After a trusted training checkpoint exists, `assess_checkpoint.py` can
