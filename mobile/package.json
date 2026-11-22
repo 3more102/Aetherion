@@ -1,7 +1,7 @@
 {
   "name": "aetherion-mobile-browser",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Installable offline-first Aetherion mobile research PWA with local device benchmarks",
   "scripts": {
     "stage-runtime": "node install-runtime.mjs",
