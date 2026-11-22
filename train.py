@@ -90,6 +90,8 @@ def main():
     parser.add_argument("--precision", choices=("fp32", "bf16"), default="fp32")
     parser.add_argument("--eval-every", type=int, default=50)
     parser.add_argument("--save-every", type=int, default=50, help="Save after every N steps (0 disables periodic saves)")
+    parser.add_argument("--retain-step-checkpoints", action="store_true",
+                        help="Opt-in: save immutable --output-stem-stepXXXXXXXX.pt files, never overwrite")
     parser.add_argument("--resume", default=None, help="Resume optimizer, weights and RNG state from this checkpoint")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--device", default="auto")
@@ -150,11 +152,14 @@ def main():
     output = Path(args.output)
 
     def save(step: int):
+        target = (output.with_name(f"{output.stem}-step{step:08d}{output.suffix}")
+                  if args.retain_step_checkpoints else output)
         save_training_checkpoint(
-            output, model=model, optimizer=optimizer, train_rng=train_rng,
-            config=asdict(cfg), step=step, seed=args.seed, data=hashes, hparams=hparams
+            target, model=model, optimizer=optimizer, train_rng=train_rng,
+            config=asdict(cfg), step=step, seed=args.seed, data=hashes, hparams=hparams,
+            overwrite=not args.retain_step_checkpoints,
         )
-        print(f"saved_checkpoint={output} step={step}")
+        print(f"saved_checkpoint={target} step={step}")
 
     for step in range(start_step + 1, args.steps + 1):
         model.train()
