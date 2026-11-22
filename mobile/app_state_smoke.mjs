@@ -51,7 +51,7 @@ const v1 = {
 };
 assert.equal(validateManifest(v1).schema_version, 1);
 
-const state = context.state;
+const state = new Script("state").runInContext(context);
 let firstCalls = 0, decodedCalls = 0;
 const logits = (token) => {
   const values = new Float32Array(256);
