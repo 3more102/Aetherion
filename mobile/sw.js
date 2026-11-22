@@ -1,10 +1,10 @@
 // M21 offline-first installable PWA shell. Models remain local file imports:
 // no checkpoints, prompts, or arbitrary same-origin API responses are cached.
 "use strict";
-const CACHE = "aetherion-mobile-m22-v1";
+const CACHE = "aetherion-mobile-m23-v1";
 const PREFIX = "aetherion-mobile-";
 const SHELL = [
-  "./", "./index.html", "./app.js", "./manifest.webmanifest",
+  "./", "./index.html", "./app.js", "./model-vault.js", "./manifest.webmanifest",
   "./icon.svg", "./precache-assets.json",
   "./icons/icon-192.png", "./icons/icon-512.png",
 ];
