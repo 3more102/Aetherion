@@ -64,7 +64,7 @@ Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE �
 
 The research target for Aetherion-125M is **14 layers, width 768, 12 attention heads, 32k vocabulary, 2048 context and SwiGLU**, estimated around **124M parameters** with tied embeddings. This is a target, not implemented or trained in the Micro prototype.
 
-## Mobile inference prototype (M17–M22)
+## Mobile inference prototype (M17–M23)
 
 Aetherion-Micro has an experimental local ONNX Runtime Web/WASM
 inference path. M17 supports full-window FP32, M18 weight-only INT4,
@@ -91,6 +91,14 @@ retain the original FP32 graph SHA across INT4 conversions, and a Python
 CLI rejects mismatched models, contexts, browser hints and partial tests.
 It requires at least three reports per variant. No physical-device results
 or pretrained model weights are shipped with this tooling.
+
+**M23 optionally stores a verified model export in origin-scoped IndexedDB**:
+choose Save local copy after importing ONNX files, Restore saved model after
+reopening the PWA, and Delete saved copy to remove its stored record. Storage
+is unencrypted, opt-in, limited to 256 MiB, and can be rejected or evicted by
+the browser. Restored models must pass the usual SHA and graph checks. No
+trained assistant model is supplied. See the
+[M23 local model guide](docs/M23_LOCAL_MODEL_VAULT.md).
 
 ## Documentation
 
