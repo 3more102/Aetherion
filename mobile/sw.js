@@ -1,10 +1,10 @@
 // M21 offline-first installable PWA shell. Models remain local file imports:
 // no checkpoints, prompts, or arbitrary same-origin API responses are cached.
 "use strict";
-const CACHE = "aetherion-mobile-m22-v1";
+const CACHE = "aetherion-mobile-m23-v1";
 const PREFIX = "aetherion-mobile-";
 const SHELL = [
-  "./", "./index.html", "./app.js", "./manifest.webmanifest",
+  "./", "./index.html", "./app.js", "./model-vault.js", "./manifest.webmanifest",
   "./icon.svg", "./precache-assets.json",
   "./icons/icon-192.png", "./icons/icon-512.png",
 ];
@@ -69,11 +69,21 @@ self.addEventListener("fetch", (event) => {
   }
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
-    const cached = await cache.match(request, { ignoreSearch: true });
+    const manifest = await cache.match("./precache-assets.json");
+    // Only the explicitly bundled application shell/runtime is cacheable.
+    // Never persist arbitrary origin-scoped JSON/API/model responses.
+    if (!manifest || url.search) return fetch(request);
+    const data = await manifest.json();
+    const scopePath = new URL(self.registration.scope).pathname;
+    const relativeAsset = "./" + url.pathname.slice(scopePath.length);
+    if (!Array.isArray(data.assets) || !data.assets.includes(relativeAsset)) {
+      return fetch(request);
+    }
+    const cached = await cache.match(relativeAsset);
     if (cached) return cached;
     const response = await fetch(request);
     if (response.ok) {
-      event.waitUntil(cache.put(request, response.clone()));
+      event.waitUntil(cache.put(relativeAsset, response.clone()));
     }
     return response;
   })());

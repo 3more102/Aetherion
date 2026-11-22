@@ -3,7 +3,8 @@
 const $ = (id) => document.getElementById(id);
 const state = { session: null, decodeSession: null, manifest: null, cache: null,
   cacheLength: 0, cacheStats: { prefill: 0, decode: 0 }, running: false, cancel: false,
-  modelBytes: 0, modelLoadAndVerifyMs: null, lastBenchmark: null };
+  modelBytes: 0, modelLoadAndVerifyMs: null, lastBenchmark: null,
+  saveCandidate: null, hasStoredModel: false, storageBusy: false };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: false });
 
@@ -12,12 +13,20 @@ function status(message, error = false) {
   $("status").classList.toggle("error", error);
 }
 
+function updateVaultButtons() {
+  const busy = state.running || state.storageBusy || !modelVault.available();
+  $("save-model").disabled = busy || !state.saveCandidate;
+  $("restore-model").disabled = busy || !state.hasStoredModel;
+  $("delete-model").disabled = busy || !state.hasStoredModel;
+}
+
 function setRunning(running) {
   state.running = running;
   $("generate").disabled = running || !state.session;
   $("benchmark").disabled = running || !state.session;
   $("load").disabled = running;
   $("stop").disabled = !running;
+  updateVaultButtons();
 }
 
 function hex(bytes) {
@@ -121,7 +130,7 @@ function requireContract(session, expectedInputs, expectedOutputs) {
   }
 }
 
-async function loadModel() {
+async function loadModel(source = null) {
   if (state.running) return;
   setRunning(true);
   const previous = [state.session, state.decodeSession];
@@ -131,17 +140,20 @@ async function loadModel() {
   state.lastBenchmark = null;
   state.modelBytes = 0;
   state.modelLoadAndVerifyMs = null;
+  state.saveCandidate = null;
+  updateVaultButtons();
   $("download-report").disabled = true;
   resetCache();
-  const onnxFile = $("onnx").files[0];
-  const decodeFile = $("decode").files[0];
-  const manifestFile = $("manifest").files[0];
+  const fromStorage = source !== null;
+  const onnxFile = fromStorage ? null : $("onnx").files[0];
+  const decodeFile = fromStorage ? null : $("decode").files[0];
+  const manifestFile = fromStorage ? null : $("manifest").files[0];
   let prefillSession = null, decodeSession = null;
   try {
     for (const session of previous) {
       if (session) await session.release();
     }
-    if (!onnxFile || !manifestFile) {
+    if (!fromStorage && (!onnxFile || !manifestFile)) {
       throw new Error("Select a prefill/model ONNX file and manifest.json.");
     }
     if (typeof ort === "undefined") {
@@ -149,11 +161,12 @@ async function loadModel() {
     }
     status("Verifying model files...");
     const loadingStart = performance.now();
-    const manifest = validateManifest(JSON.parse(await manifestFile.text()));
-    if (isCachedManifest(manifest) && !decodeFile) {
+    const manifest = validateManifest(JSON.parse(
+      fromStorage ? source.manifestText : await manifestFile.text()));
+    if (isCachedManifest(manifest) && !fromStorage && !decodeFile) {
       throw new Error("M19 requires decode.onnx in addition to prefill.onnx.");
     }
-    const firstBytes = await onnxFile.arrayBuffer();
+    const firstBytes = fromStorage ? source.prefillBytes : await onnxFile.arrayBuffer();
     const firstSha = isCachedManifest(manifest) ?
       manifest.graphs.prefill.sha256 : manifest.onnx_sha256;
     if ((await sha256(firstBytes)) !== firstSha) {
@@ -161,8 +174,8 @@ async function loadModel() {
     }
     let decodeBytes = null;
     if (isCachedManifest(manifest)) {
-      decodeBytes = await decodeFile.arrayBuffer();
-      if ((await sha256(decodeBytes)) !== manifest.graphs.decode.sha256) {
+      decodeBytes = fromStorage ? source.decodeBytes : await decodeFile.arrayBuffer();
+      if (!decodeBytes || (await sha256(decodeBytes)) !== manifest.graphs.decode.sha256) {
         throw new Error("Cached decode SHA-256 mismatch.");
       }
     }
@@ -188,6 +201,8 @@ async function loadModel() {
     state.manifest = manifest;
     state.modelBytes = firstBytes.byteLength + (decodeBytes ? decodeBytes.byteLength : 0);
     state.modelLoadAndVerifyMs = performance.now() - loadingStart;
+    state.saveCandidate = fromStorage ? null : { onnxFile, decodeFile, manifestFile };
+    updateVaultButtons();
     const mode = manifest.schema_version === 3 ? "INT4 weights + FP32 KV cache" :
       manifest.schema_version === 2 ? "FP32 + KV cache" :
       (manifest.quantization ? "INT4 full-window" : "FP32 full-window");
@@ -199,6 +214,95 @@ async function loadModel() {
     status("Load failed: " + error.message, true);
   } finally {
     setRunning(false);
+  }
+}
+
+async function refreshSavedModelStatus() {
+  if (!modelVault.available()) {
+    $("vault-note").textContent = "Local browser model storage is unavailable. You can still import files each session.";
+    updateVaultButtons();
+    return;
+  }
+  try {
+    state.hasStoredModel = await modelVault.exists();
+    $("vault-note").textContent = state.hasStoredModel ?
+      "A saved model exists on this browser origin. Restore or delete it explicitly." :
+      "No model saved on this device. Import and verify files, then choose Save local copy.";
+  } catch (error) {
+    state.hasStoredModel = false;
+    $("vault-note").textContent = "Local storage unavailable: " + error.message;
+  }
+  updateVaultButtons();
+}
+
+async function saveLoadedModel() {
+  if (state.running || state.storageBusy || !state.saveCandidate) return;
+  state.storageBusy = true;
+  updateVaultButtons();
+  try {
+    const { onnxFile, decodeFile, manifestFile } = state.saveCandidate;
+    const size = onnxFile.size + (isCachedManifest(state.manifest) ? decodeFile.size : 0);
+    if (size > 256 * 1024 * 1024) {
+      throw new Error("Model exceeds the 256 MiB offline storage safety limit.");
+    }
+    const manifestText = await manifestFile.text();
+    const manifest = validateManifest(JSON.parse(manifestText));
+    if (JSON.stringify(manifest) !== JSON.stringify(state.manifest)) {
+      throw new Error("Imported manifest changed since validation.");
+    }
+    const prefillBytes = await onnxFile.arrayBuffer();
+    const decodeBytes = isCachedManifest(manifest) ?
+      await decodeFile.arrayBuffer() : null;
+    const expectedPrefill = isCachedManifest(manifest) ?
+      manifest.graphs.prefill.sha256 : manifest.onnx_sha256;
+    if ((await sha256(prefillBytes)) !== expectedPrefill ||
+        (decodeBytes && (await sha256(decodeBytes)) !== manifest.graphs.decode.sha256)) {
+      throw new Error("Model integrity changed since import.");
+    }
+    await modelVault.save({ manifestText, prefillBytes, decodeBytes });
+    state.hasStoredModel = true;
+    $("vault-note").textContent = "Model saved locally to this website's browser storage. It is not encrypted.";
+    status("Model saved on this browser. The storage copy can be deleted independently of the loaded model.");
+  } catch (error) {
+    status("Saving local model failed: " + error.message, true);
+  } finally {
+    state.storageBusy = false;
+    updateVaultButtons();
+  }
+}
+
+async function restoreSavedModel() {
+  if (state.running || state.storageBusy || !state.hasStoredModel) return;
+  state.storageBusy = true;
+  updateVaultButtons();
+  try {
+    const stored = await modelVault.read();
+    if (!stored) throw new Error("No local model is stored.");
+    state.storageBusy = false;
+    updateVaultButtons();
+    await loadModel(stored);  // Always recheck SHA-256 and ONNX graph contracts.
+  } catch (error) {
+    status("Restoring local model failed: " + error.message, true);
+  } finally {
+    state.storageBusy = false;
+    updateVaultButtons();
+  }
+}
+
+async function deleteSavedModel() {
+  if (state.running || state.storageBusy || !state.hasStoredModel) return;
+  state.storageBusy = true;
+  updateVaultButtons();
+  try {
+    await modelVault.remove();
+    state.hasStoredModel = false;
+    $("vault-note").textContent = "Stored model deleted. The active inference session, if any, is unaffected.";
+    status("Browser-stored model deleted; browser or device backups may retain copies.");
+  } catch (error) {
+    status("Deleting stored model failed: " + error.message, true);
+  } finally {
+    state.storageBusy = false;
+    updateVaultButtons();
   }
 }
 
@@ -453,7 +557,10 @@ async function generate() {
   }
 }
 
-$("load").addEventListener("click", loadModel);
+$("load").addEventListener("click", () => loadModel());
+$("save-model").addEventListener("click", saveLoadedModel);
+$("restore-model").addEventListener("click", restoreSavedModel);
+$("delete-model").addEventListener("click", deleteSavedModel);
 $("generate").addEventListener("click", generate);
 $("benchmark").addEventListener("click", benchmark);
 $("download-report").addEventListener("click", downloadBenchmark);
@@ -483,3 +590,4 @@ if ("serviceWorker" in navigator && (location.protocol === "https:" || location.
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 status("Select an exported checkpoint model and its manifest. No network inference API is used.");
+refreshSavedModelStatus();

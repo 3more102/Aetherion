@@ -17,6 +17,7 @@ from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 STATIC = (
     "index.html",
     "app.js",
+    "model-vault.js",
     "sw.js",
     "manifest.webmanifest",
     "icon.svg",

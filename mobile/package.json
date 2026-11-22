@@ -1,11 +1,11 @@
 {
   "name": "aetherion-mobile-browser",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Installable offline-first Aetherion mobile research PWA with local device benchmarks",
   "scripts": {
     "stage-runtime": "node install-runtime.mjs",
-    "check": "node --check app.js && node --check sw.js && node --check install-runtime.mjs && node --check generate-icons.mjs && node --check pwa_staging_smoke.mjs && node --check benchmark_smoke.mjs",
+    "check": "node --check app.js && node --check model-vault.js && node --check sw.js && node --check install-runtime.mjs && node --check generate-icons.mjs && node --check pwa_staging_smoke.mjs && node --check benchmark_smoke.mjs && node --check model_vault_smoke.mjs && node --check model_vault_ui_smoke.mjs",
     "pack-pwa": "python package_pwa.py",
     "check-pwa": "node pwa_staging_smoke.mjs"
   },

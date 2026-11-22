@@ -20,6 +20,8 @@ const context = createContext({
     return nodes.get(id);
   }},
 });
+new Script(readFileSync(new URL("./model-vault.js", import.meta.url), "utf8"),
+  { filename: "model-vault.js" }).runInContext(context);
 new Script(readFileSync(new URL("./app.js", import.meta.url), "utf8"),
   { filename: "app.js" }).runInContext(context);
 
