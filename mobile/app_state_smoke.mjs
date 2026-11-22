@@ -40,6 +40,28 @@ const m19 = {
   },
 };
 assert.equal(validateManifest(m19).schema_version, 2);
+// M20 shares M19's two-graph session contract but requires exact INT4
+// metadata and both original source hashes.
+const m20 = {
+  ...m19,
+  graphs: {
+    prefill: { ...m19.graphs.prefill, source_sha256: "b".repeat(64) },
+    decode: { ...m19.graphs.decode, source_sha256: "c".repeat(64) },
+  },
+  quantization: {
+    type: "weight_only_symmetric_int4", format: "MatMulNBits",
+    cache_dtype: "float32",
+    prefill_quantized_matmul_nodes: 1,
+    decode_quantized_matmul_nodes: 1,
+  },
+};
+assert.equal(validateManifest(m20).quantization.format, "MatMulNBits");
+assert.throws(() => validateManifest({
+  ...m20, quantization: { ...m20.quantization, cache_dtype: "int4" },
+}));
+assert.throws(() => validateManifest({
+  ...m20, graphs: { ...m20.graphs, decode: { ...m20.graphs.decode, source_sha256: "invalid" } },
+}));
 assert.throws(() => validateManifest({ ...m19, cache_policy: "unlimited" }));
 assert.throws(() => validateManifest({
   ...m19, graphs: { ...m19.graphs, decode: { filename: "decode.onnx", sha256: "bad" } },
