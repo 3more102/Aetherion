@@ -1,9 +1,6 @@
 # Aetherion BPE tokenizer (M1)
 
-Aetherion supports a **separate experimental byte-level BPE tokenizer trainer**.
-The current Micro model is still a 256-byte-token demo. BPE token IDs are **not**
-yet consumed by `train.py` or `generate.py`; using BPE artifacts with a
-byte-only checkpoint would be invalid.
+Aetherion supports byte-level BPE tokenizer training and **verified BPE token IDs** in the Micro trainer and generator. Legacy raw-byte Micro checkpoints remain supported. No pretrained assistant capability is implied.
 
 ## Prepare authorized inputs
 
@@ -61,3 +58,22 @@ vocabulary size, and future checkpoints must record and verify its SHA-256.
 The manifest verifies data integrity **only**; it does not independently verify
 copyright permission, privacy screening, near-duplicate removal, benchmark
 contamination, or suitability for pretraining.
+
+## Use BPE for model training and generation
+
+The trainer now supports `--tokenizer` pointing to the existing `tokenizer.json` artifact. Its `.meta.json` is verified at load time, and the trainer requires matching prepared text files and split manifest. The checkpoint stores the exact tokenizer SHA-256 and actual vocabulary size. The generator refuses a missing or mismatched tokenizer.
+
+```bash
+python train.py --data data/processed/v1/train.txt \
+  --val-data data/processed/v1/validation.txt \
+  --tokenizer artifacts/tokenizer.json \
+  --steps 100 --batch-size 2 --block-size 32 \
+  --save-every 20 --output checkpoints/bpe-micro.pt
+
+python generate.py --checkpoint checkpoints/bpe-micro.pt \
+  --tokenizer artifacts/tokenizer.json --prompt "Hello مرحبا" --tokens 20
+```
+
+To resume, pass the exact same dataset and tokenizer with `--resume checkpoints/bpe-micro.pt` and increase the total `--steps` value. Existing byte-only checkpoints still work without a tokenizer. Changing the tokenizer, source files, or manifest invalidates checkpoint resume.
+
+**Scope:** This is still a tiny engineering pipeline. The prepared `.txt` streams use newline boundaries, not explicit per-document BOS/EOS packing. Real pretraining needs token packing, held-out evaluation, licensed large-scale data and measured hardware feasibility.
