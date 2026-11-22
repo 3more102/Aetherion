@@ -160,6 +160,17 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M27: Production training contamination gate
+
+The 125M pilot launcher and non-demo held-out checkpoint comparator now
+**reject detected cross-split lexical contamination automatically** before
+starting training or loading checkpoint weights. They fail closed on scan
+budget overruns, corrupted prepared files and disallowed license IDs.
+Reviewer attestations remain necessary but cannot bypass these detected
+failures. The check is bounded and lexical only; no claim of full benchmark
+decontamination, data licensing, privacy compliance or trained weights.
+See [M27 production screening gate](docs/M27_PRODUCTION_CONTAMINATION_GATE.md).
+
 ## M25: Core-model data contamination screening
 
 The 125M research model is **still untrained**. Before authorizing any real
