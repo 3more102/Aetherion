@@ -88,7 +88,7 @@ state.session = { async run(feeds) {
 }};
 state.decodeSession = { async run(feeds) {
   decodedCalls++;
-  assert.equal(Number(feeds.past_length.data[0]), decodedCalls);
+  assert.equal(Number(feeds.past_length.data[0]), state.cacheLength);
   assert.ok(feeds.past_key_0 && feeds.past_value_0);
   return { next_logits: logits(71), key_0: { data: 44 }, value_0: { data: 45 } };
 }};
