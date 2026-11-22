@@ -7,6 +7,7 @@ from pathlib import Path
 import torch
 from aetherion import Aetherion, ModelConfig
 from aetherion.checkpoint import load_training_checkpoint, save_training_checkpoint
+from aetherion.training import learning_rate, optimizer_step, precision_context
 
 
 def resolve_device(name: str) -> str:
@@ -89,6 +90,11 @@ def main():
     parser.add_argument("--layers", type=int, default=4)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--lr", type=float, default=3e-4)
+    parser.add_argument("--accumulation", type=int, default=1, help="Microbatches per optimizer update")
+    parser.add_argument("--schedule-steps", type=int, default=0, help="Fixed cosine horizon; zero keeps constant LR")
+    parser.add_argument("--warmup-steps", type=int, default=0)
+    parser.add_argument("--min-lr-ratio", type=float, default=0.1)
+    parser.add_argument("--precision", choices=("fp32", "bf16"), default="fp32")
     parser.add_argument("--eval-every", type=int, default=50)
     parser.add_argument("--save-every", type=int, default=50, help="Save after every N steps (0 disables periodic saves)")
     parser.add_argument("--resume", default=None, help="Resume optimizer, weights and RNG state from this checkpoint")
@@ -101,8 +107,17 @@ def main():
     if args.lr <= 0:
         parser.error("--lr must be > 0")
 
+    if args.accumulation < 1 or (args.schedule_steps and args.steps > args.schedule_steps):
+        parser.error("Invalid accumulation or total steps exceed schedule horizon")
+    try:
+        learning_rate(1, peak=args.lr, warmup=args.warmup_steps,
+                      horizon=args.schedule_steps, min_ratio=args.min_lr_ratio)
+    except ValueError as exc:
+        parser.error(str(exc))
+
     torch.manual_seed(args.seed)
     device = resolve_device(args.device)
+    precision_context(device, args.precision)
     if args.tokenizer:
         train, val, hashes, vocab_size = load_bpe_data(args.data, args.val_data, args.tokenizer)
     else:
@@ -116,6 +131,11 @@ def main():
     model = Aetherion(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
     hparams = {"batch_size": args.batch_size, "learning_rate": args.lr, "weight_decay": 0.1}
+    # Keep legacy constant-LR FP32 checkpoint metadata byte-for-byte compatible.
+    if args.accumulation != 1 or args.schedule_steps or args.precision != "fp32":
+        hparams.update(accumulation=args.accumulation, schedule_steps=args.schedule_steps,
+                       warmup_steps=args.warmup_steps, min_lr_ratio=args.min_lr_ratio,
+                       precision=args.precision, device=str(torch.device(device)))
     train_rng = torch.Generator(device="cpu").manual_seed(args.seed + 1)
     start_step = 0
     if args.resume is not None:
@@ -145,21 +165,21 @@ def main():
 
     for step in range(start_step + 1, args.steps + 1):
         model.train()
-        x, y = get_batch(train, train_rng)
-        _, loss = model(x, y)
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        lr = learning_rate(step, peak=args.lr, warmup=args.warmup_steps,
+                           horizon=args.schedule_steps, min_ratio=args.min_lr_ratio)
+        for group in optimizer.param_groups:
+            group["lr"] = lr
+        loss = optimizer_step(model, optimizer, lambda: get_batch(train, train_rng),
+                              accumulation=args.accumulation, device=device, precision=args.precision)
         if step == 1 or step % args.eval_every == 0 or step == args.steps:
             # Step-specific validation sampling prevents extra end-of-run evaluations
             # from perturbing training RNG or later validation measurements.
             val_rng = torch.Generator(device="cpu").manual_seed(args.seed + 1_000_003 + step)
             model.eval()
-            with torch.inference_mode():
+            with torch.inference_mode(), precision_context(device, args.precision):
                 vx, vy = get_batch(val, val_rng)
                 _, val_loss = model(vx, vy)
-            print(f"step={step:4d} train_loss={loss.item():.3f} val_loss={val_loss.item():.3f}")
+            print(f"step={step:4d} train_loss={loss:.3f} val_loss={val_loss.item():.3f} lr={lr:.6g}")
         if args.save_every and step % args.save_every == 0:
             save(step)
 
