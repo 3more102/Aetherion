@@ -1,7 +1,7 @@
 // Cache this static application shell and fetched self-hosted runtime assets.
 // Models are deliberately not cached: users select their own local files.
 "use strict";
-const CACHE = "aetherion-mobile-m17-v1";
+const CACHE = "aetherion-mobile-m18-v1";
 const SHELL = ["./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg"];
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL))

@@ -15,7 +15,7 @@
     label{display:block;margin:13px 0 6px;font-weight:600}input,textarea,button{font:inherit}
     input[type=file],input[type=number],textarea{display:block;width:100%;padding:12px;background:#0c1925;color:#f4f8fb;border:1px solid #466175;border-radius:9px}
     textarea{min-height:100px;resize:vertical}button{padding:12px 16px;background:#62d7c6;color:#051f26;border:0;border-radius:9px;font-weight:700;margin:12px 7px 0 0}
-    button:disabled{opacity:.45}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #ffd166;outline-offset:2px}
+    button:disabled{opacity:.45} pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.8rem;background:#0c1925;padding:10px;border-radius:8px}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:3px solid #ffd166;outline-offset:2px}
     #status{border-left:3px solid #62d7c6;padding:12px;background:#102638;overflow-wrap:anywhere}
     #status.error{border-color:#ff8e8e}#output{white-space:pre-wrap;overflow-wrap:anywhere;min-height:80px;line-height:1.5}
     small{color:#a9c3d8}.muted{font-size:.9rem}
@@ -42,11 +42,14 @@
     <input id="count" type="number" min="1" max="64" value="12">
     <button id="generate" type="button" disabled>Generate</button>
     <button id="stop" type="button" disabled>Stop</button>
+    <button id="benchmark" type="button" disabled>Benchmark (16 steps)</button>
     <p id="status" role="status" aria-live="polite"></p>
     <h3>Output</h3>
     <div id="output" aria-live="off"></div>
+    <h3>Local device benchmark</h3>
+    <pre id="benchmark-report" aria-label="Mobile benchmark JSON report"></pre>
   </section>
-  <p class="muted">Research preview: Aetherion does not currently ship a validated conversational model. Random or minimally trained checkpoints may produce meaningless characters. Runs only on modern WebAssembly-compatible phones with adequate memory.</p>
+  <p class="muted">Research preview: Aetherion does not currently ship a validated conversational model. Random or minimally trained checkpoints may produce meaningless characters. INT4 exports may differ numerically from FP32. Runs only on modern WebAssembly-compatible phones with adequate memory.</p>
 </main>
 <script src="./vendor/ort.wasm.min.js"></script>
 <script src="./app.js" defer></script>
