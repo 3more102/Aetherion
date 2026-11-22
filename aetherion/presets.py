@@ -25,6 +25,18 @@ PRESETS = {
         "d_model": 768,
         "dropout": 0.0,
     },
+    "350m": {
+        "vocab_size": 32_000, "block_size": 2048, "n_layers": 25,
+        "n_heads": 16, "d_model": 1024, "dropout": 0.0,
+    },
+    "1.3b": {
+        "vocab_size": 32_000, "block_size": 4096, "n_layers": 24,
+        "n_heads": 32, "d_model": 2048, "dropout": 0.0,
+    },
+    "7b": {
+        "vocab_size": 32_000, "block_size": 4096, "n_layers": 34,
+        "n_heads": 32, "d_model": 4096, "dropout": 0.0,
+    },
 }
 
 
@@ -67,6 +79,7 @@ def preset_report(name: str) -> dict:
         "config": asdict(cfg),
         "parameter_breakdown": counts,
         "fp32_weight_only_mib": round(counts["total"] * 4 / (1024**2), 2),
+        "fp32_adamw_parameter_gradient_moments_gib": round(counts["total"] * 16 / (1024**3), 3),
         "trained": False,
         "warning": "Architecture estimate only; no checkpoint, throughput or GPU-memory measurement.",
     }

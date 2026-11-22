@@ -118,6 +118,7 @@ class Aetherion(nn.Module):
     def __init__(self, cfg: ModelConfig):
         super().__init__()
         self.cfg = cfg
+        self.activation_checkpointing = False
         self.embed = nn.Embedding(cfg.vocab_size, cfg.d_model)
         self.blocks = nn.ModuleList([TransformerBlock(cfg) for _ in range(cfg.n_layers)])
         self.norm = RMSNorm(cfg.d_model)
@@ -135,7 +136,11 @@ class Aetherion(nn.Module):
             raise ValueError("Input exceeds configured context window")
         x = self.embed(token_ids)
         for block in self.blocks:
-            x = block(x)
+            if self.activation_checkpointing and self.training:
+                from torch.utils.checkpoint import checkpoint
+                x = checkpoint(block, x, use_reentrant=False)
+            else:
+                x = block(x)
         logits = self.lm_head(self.norm(x))
         loss = None
         if targets is not None:
