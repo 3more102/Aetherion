@@ -18,3 +18,5 @@ jobs:
         with:
           node-version: "22"
       - run: cd mobile && npm install --no-audit --no-fund && npm run stage-runtime && npm run check
+      - run: python mobile/ci_synthetic_models.py mobile/artifacts/ci
+      - run: node mobile/runtime_smoke.mjs mobile/artifacts/ci
