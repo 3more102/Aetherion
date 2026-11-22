@@ -1,0 +1,4 @@
+{"id":"math-01","kind":"numeric","prompt":"Return only the numeric answer: 17 + 26.","answer":"43"}
+{"id":"math-02","kind":"numeric","prompt":"Return only the fraction: 3/4 minus 1/8.","answer":"5/8"}
+{"id":"logic-01","kind":"exact","prompt":"Return only yes or no: All A are B. All B are C. Are all A C?","answer":"yes"}
+{"id":"code-01","kind":"python","prompt":"Return only Python code defining a function square(x) that returns x*x.","answer":"def square(x):\n    return x * x"}

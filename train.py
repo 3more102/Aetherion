@@ -10,14 +10,7 @@ from aetherion.checkpoint import load_training_checkpoint, save_training_checkpo
 from aetherion.training import learning_rate, optimizer_step, precision_context
 
 
-def resolve_device(name: str) -> str:
-    if name != "auto":
-        return name
-    if torch.cuda.is_available():
-        return "cuda"
-    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-        return "mps"
-    return "cpu"
+from aetherion.devices import resolve_device
 
 
 def load_data(train_path: str, val_path: str | None):
@@ -132,7 +125,7 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=0.1)
     hparams = {"batch_size": args.batch_size, "learning_rate": args.lr, "weight_decay": 0.1}
     # Keep legacy constant-LR FP32 checkpoint metadata byte-for-byte compatible.
-    if args.accumulation != 1 or args.schedule_steps or args.precision != "fp32":
+    if args.accumulation != 1 or args.schedule_steps or args.precision != "fp32" or torch.device(device).type == "xpu":
         hparams.update(accumulation=args.accumulation, schedule_steps=args.schedule_steps,
                        warmup_steps=args.warmup_steps, min_lr_ratio=args.min_lr_ratio,
                        precision=args.precision, device=str(torch.device(device)))
