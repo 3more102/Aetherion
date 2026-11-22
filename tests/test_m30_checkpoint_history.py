@@ -134,3 +134,31 @@ def test_history_production_requires_review_before_loading_weights(tmp_path):
     with pytest.raises(ValueError, match="Production requires"):
         audit_history(checkpoints=["missing1.pt", "missing2.pt"],
                       data_dir=str(tmp_path), demo=False)
+
+
+def test_guarded_125m_pilot_forwards_retained_checkpoint_options(monkeypatch):
+    from types import SimpleNamespace
+    import pilot_train
+
+    monkeypatch.setattr(pilot_train, "audit_corpus",
+                        lambda *args: {"manifest_sha256": "synthetic-manifest"})
+    monkeypatch.setattr(pilot_train, "require_review", lambda *args: None)
+    monkeypatch.setattr(pilot_train, "require_no_cross_split_findings", lambda *args: None)
+    monkeypatch.setattr(pilot_train, "load_verified_tokenizer", lambda *args: (
+        SimpleNamespace(get_vocab_size=lambda: 32000),
+        {"manifest_sha256": "synthetic-manifest"},
+    ))
+    args = SimpleNamespace(
+        data_dir="unused", allow_license=["CC0-1.0"], review="unused-review.json",
+        tokenizer="unused-tokenizer.json", context=256,
+        steps=4, schedule_steps=16, warmup_steps=1,
+        batch_size=1, accumulation=4, precision="bf16",
+        device="cuda:0", output="pilot.pt", resume=None,
+        retain_step_checkpoints=True, save_every=2,
+    )
+    command = pilot_train.pilot_command(args)
+    assert "--retain-step-checkpoints" in command
+    assert command[command.index("--save-every") + 1] == "2"
+    args.save_every = -1
+    with pytest.raises(ValueError, match="save-every"):
+        pilot_train.pilot_command(args)
