@@ -7,6 +7,7 @@ import sys
 
 from aetherion.corpus_gate import audit_corpus, require_review
 from aetherion.contamination import require_no_cross_split_findings
+from aetherion.hardware_gate import validate_pilot_benchmark
 from aetherion.presets import get_preset
 from aetherion.tokenizer_runtime import load_verified_tokenizer
 
@@ -59,10 +60,27 @@ def main():
     p.add_argument("--precision", choices=("fp32", "bf16"), default="bf16")
     p.add_argument("--output", required=True)
     p.add_argument("--resume")
+    p.add_argument("--benchmark-report", help="Local exact-configuration 125M accelerator benchmark JSON")
+    p.add_argument("--max-peak-reserved-gib", type=float,
+                   help="Explicit upper bound on measured accelerator peak reserved GiB")
     p.add_argument("--execute", action="store_true", help="Explicitly start training; default only prints plan")
     args = p.parse_args()
+    hardware_report = None
+    if args.execute:
+        if not args.benchmark_report or args.max_peak_reserved_gib is None:
+            p.error("--execute requires --benchmark-report and --max-peak-reserved-gib")
+        try:
+            hardware_report = validate_pilot_benchmark(
+                args.benchmark_report, context=args.context,
+                batch_size=args.batch_size, accumulation=args.accumulation,
+                precision=args.precision, device=args.device,
+                max_peak_reserved_gib=args.max_peak_reserved_gib,
+            )
+        except (ValueError, OSError) as exc:
+            p.error(str(exc))
     cmd = pilot_command(args)
     if args.execute:
+        print(json.dumps({"hardware_preflight": hardware_report}, indent=2), flush=True)
         subprocess.run(cmd, check=True)
     else:
         print(json.dumps({"executed": False, "command": cmd}, indent=2))
