@@ -100,11 +100,16 @@ function makeApp(storage) {
   const ort = {
     env: { wasm: {} },
     InferenceSession: {
-      async create() {
+      async create(bytes) {
         sessionCreations++;
+        const marker = bytes[0];
+        const cached = marker === 10 || marker === 11;
         return {
-          inputNames: ["tokens", "last_position"],
-          outputNames: ["next_logits"],
+          inputNames: marker === 11 ?
+            ["token_ids", "past_length", "past_key_0", "past_value_0"] :
+            ["tokens", "last_position"],
+          outputNames: cached ?
+            ["next_logits", "key_0", "value_0"] : ["next_logits"],
           async release() {},
         };
       },
@@ -195,5 +200,35 @@ await tampered.click("restore-model");
 assert.equal(tampered.sessions, 0);
 assert.equal(tampered.node("generate").disabled, true);
 assert.match(tampered.node("status").textContent, /SHA-256 mismatch/i);
+
+// Cached prefill/decode pair: save + restore both graphs and contracts.
+const cached = makeApp(storage);
+await cached.flush();
+const prefill = Uint8Array.from([10, 20, 30]);
+const decode = Uint8Array.from([11, 22, 33]);
+const cachedManifest = {
+  schema_version: 2, architecture: "aetherion-micro",
+  tokenizer_type: "utf8_bytes", vocab_size: 256, window: 4,
+  n_layers: 1, n_heads: 4, head_dim: 8,
+  cache_policy: "rebuild_relative_rope_at_window_boundary",
+  graphs: {
+    prefill: { filename: "prefill.onnx", sha256: hash(prefill) },
+    decode: { filename: "decode.onnx", sha256: hash(decode) },
+  },
+};
+cached.node("onnx").files = [makeFile(prefill, "prefill.onnx")];
+cached.node("decode").files = [makeFile(decode, "decode.onnx")];
+cached.node("manifest").files = [makeFile(
+  new TextEncoder().encode(JSON.stringify(cachedManifest)), "manifest.json",
+)];
+await cached.click("load");
+assert.equal(cached.sessions, 2);
+await cached.click("save-model");
+const cachedRestart = makeApp(storage);
+await cachedRestart.flush();
+await cachedRestart.click("restore-model");
+assert.equal(cachedRestart.sessions, 2, "Dual ONNX prefill/decode must be restored");
+assert.equal(cachedRestart.state.manifest.schema_version, 2);
+assert.equal(cachedRestart.node("generate").disabled, false);
 
 console.log("M23 UI load/save/relaunch/restore/delete and tampered-ONNX rejection smoke passed");
