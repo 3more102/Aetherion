@@ -50,6 +50,17 @@ const v1 = {
   vocab_size: 256, window: 4, onnx_sha256: sha,
 };
 assert.equal(validateManifest(v1).schema_version, 1);
+const m18 = {
+  ...v1, onnx_sha256: "b".repeat(64), source_onnx_sha256: sha,
+  quantization: {
+    type: "weight_only_symmetric_int4", format: "MatMulNBits",
+    quantized_matmul_nodes: 2,
+  },
+};
+assert.equal(validateManifest(m18).schema_version, 1);
+assert.equal(context.sourceModelSha256(m18), sha);
+assert.throws(() => validateManifest({ ...m18, source_onnx_sha256: undefined }));
+
 
 const m20 = {
   ...m19, schema_version: 3,
