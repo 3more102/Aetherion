@@ -32,7 +32,7 @@
     <h2>Install this experimental web app</h2>
     <button id="install" type="button" hidden>Install on this device</button>
     <p id="install-note" class="muted">On supported Android browsers, use Install app or Add to Home screen from the browser menu. On iPhone Safari, use Share → Add to Home Screen. An install button appears only when the browser offers it. HTTPS is required outside localhost.</p>
-    <p class="muted">Installing the shell does not install pretrained weights. Each session still requires you to choose the local ONNX files. Offline operation also depends on browser cache/storage retention.</p>
+    <p class="muted">Installing the shell does not install pretrained weights. You may explicitly save a verified ONNX export in this browser for later sessions. Offline availability depends on browser storage retention.</p>
   </section>
   <p>Experimental on-device text generation for Android and iPhone browsers. The model runs on your phone using WebAssembly, not a remote inference server.</p>
   <section>
@@ -47,7 +47,16 @@
     <p class="muted">Files stay on your device. Cached mode requires a matching prefill and decode ONNX pair plus manifest.json. M20 INT4 uses prefill.int4.onnx and decode.int4.onnx. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
   </section>
   <section>
-    <h2>2. Generate locally</h2>
+    <h2>2. Optional device-local model storage</h2>
+    <p>After loading a verified model, choose Save local copy to retain its ONNX files in this browser's IndexedDB. Restore a saved copy in a later session without selecting files again.</p>
+    <button id="save-model" type="button" disabled>Save local copy</button>
+    <button id="restore-model" type="button" disabled>Restore saved model</button>
+    <button id="delete-model" type="button" disabled>Delete saved copy</button>
+    <p id="vault-note" class="muted" role="status" aria-live="polite">Checking browser storage...</p>
+    <p class="muted">Saving is <strong>opt-in</strong>, limited to 256 MiB, and does not include prompts or benchmark logs. Model files are unencrypted in origin-scoped browser storage, potentially accessible to other scripts on the same website origin. Use a trusted HTTPS host. Browser eviction, clearing website data, private browsing, or storage restrictions may remove the model. Deletion does not erase backups.</p>
+  </section>
+  <section>
+    <h2>3. Generate locally</h2>
     <label for="prompt">Prompt</label>
     <textarea id="prompt" spellcheck="false" placeholder="Hello Aetherion"></textarea>
     <label for="count">New byte tokens (1–64)</label>
@@ -66,6 +75,7 @@
   <p class="muted">Research preview: Aetherion does not currently ship a validated conversational model. Random or minimally trained checkpoints may produce meaningless characters. INT4 exports may differ numerically from FP32. Runs only on modern WebAssembly-compatible phones with adequate memory.</p>
 </main>
 <script src="./vendor/ort.wasm.min.js"></script>
+<script src="./model-vault.js" defer></script>
 <script src="./app.js" defer></script>
 </body>
 </html>
