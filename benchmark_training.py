@@ -3,6 +3,7 @@ import argparse
 from dataclasses import replace
 import json
 import platform
+from pathlib import Path
 import time
 
 import torch
@@ -47,7 +48,9 @@ def benchmark(*, preset="micro", device="cpu", precision="fp32", batch_size=1,
     sync()
     seconds = time.perf_counter() - start
     tokens = steps * batch_size * accumulation * cfg.block_size
-    return {"synthetic": True, "preset": preset, "device": str(device),
+    return {"schema_version": 1,
+            "kind": "aetherion-synthetic-optimizer-hardware-benchmark",
+            "synthetic": True, "preset": preset, "device": str(device),
             "hardware": accelerator.get_device_name(device) if accelerator is not None else platform.processor() or platform.machine(),
             "torch_version": str(torch.__version__), "precision": precision,
             "parameters": sum(p.numel() for p in model.parameters()),
@@ -70,7 +73,14 @@ def main():
     p.add_argument("--steps", type=int, default=3)
     p.add_argument("--warmup", type=int, default=1)
     p.add_argument("--context", type=int)
-    print(json.dumps(benchmark(**vars(p.parse_args())), indent=2, allow_nan=False))
+    p.add_argument("--output", help="Create a JSON report; never overwrite an existing report")
+    options = vars(p.parse_args())
+    output = options.pop("output")
+    payload = json.dumps(benchmark(**options), indent=2, allow_nan=False) + "\n"
+    if output:
+        with Path(output).open("x", encoding="utf-8") as report_file:
+            report_file.write(payload)
+    print(payload, end="")
 
 
 if __name__ == "__main__":
