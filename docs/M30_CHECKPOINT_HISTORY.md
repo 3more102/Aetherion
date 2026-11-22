@@ -47,6 +47,11 @@ Each saved snapshot retains the existing format-v2 optimizer and RNG
 state and can be used with `--resume path/to/stepXXXXXXXX.pt`. Restart
 with a *larger total* `--steps` value and leave the previous files intact.
 
+The production `pilot_train.py` also accepts `--retain-step-checkpoints`
+and `--save-every N`, forwarding both to `train.py`. Its existing M27
+corpus attestation and M28 hardware evidence requirements still apply
+to `--execute`. By default, its trainer uses the original save interval.
+
 Checkpointing requires disk space proportional to model size and optimizer
 state, particularly for the proposed 125M pilot; confirm free space and
 storage permissions before enabling frequent snapshots.
