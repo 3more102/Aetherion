@@ -56,6 +56,7 @@ From the repository root:
 
 ```sh
 node mobile/model_vault_smoke.mjs
+node mobile/model_vault_ui_smoke.mjs
 node mobile/app_state_smoke.mjs
 node mobile/benchmark_smoke.mjs
 python -m pytest -q tests/test_mobile_package.py
