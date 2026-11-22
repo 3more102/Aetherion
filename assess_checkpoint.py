@@ -77,6 +77,8 @@ def assess_checkpoint(
     if fingerprint.get("explicit_validation_file") is not True:
         raise ValueError("Evaluation requires a separately supplied validation file")
     chosen_device = resolve_device(device)
+    # Verify the original artifact did not change while it was evaluated.
+    before_sha = file_sha256(checkpoint)
     artifact = torch.load(checkpoint, map_location="cpu", weights_only=True, mmap=True)
     if not isinstance(artifact, dict) or artifact.get("format_version") != 2:
         raise ValueError("Require a trusted format-v2 training checkpoint")
@@ -115,12 +117,14 @@ def assess_checkpoint(
     measured = evaluate_tokens(model, validation, stride=stride)
     if measured["evaluated_targets"] != validation.numel() - 1:
         raise ValueError("Validation did not cover every next-token target")
+    if file_sha256(checkpoint) != before_sha:
+        raise ValueError("Checkpoint changed during evaluation; evidence rejected")
     return {
         "schema_version": 1,
         "kind": "aetherion-single-checkpoint-heldout-validation",
         "mode": mode,
         "checkpoint": {
-            "sha256": file_sha256(checkpoint),
+            "sha256": before_sha,
             "step": step,
             "format_version": 2,
             "seed": seed,
