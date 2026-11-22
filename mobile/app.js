@@ -1,7 +1,8 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = { session: null, manifest: null, running: false, cancel: false };
+const state = { session: null, decodeSession: null, manifest: null, cache: null,
+  cacheLength: 0, cacheStats: { prefill: 0, decode: 0 }, running: false, cancel: false };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: false });
 
@@ -29,66 +30,136 @@ async function sha256(bytes) {
   return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes)));
 }
 
+function isSha256(value) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value);
+}
+
+function cacheTensorNames(layers, prefix = "") {
+  const names = [];
+  for (let i = 0; i < layers; i++) {
+    names.push(prefix + "key_" + i, prefix + "value_" + i);
+  }
+  return names;
+}
+
 function validateManifest(manifest) {
-  if (!manifest || manifest.schema_version !== 1 ||
+  if (!manifest ||
       manifest.architecture !== "aetherion-micro" ||
       manifest.tokenizer_type !== "utf8_bytes" ||
       manifest.vocab_size !== 256 ||
-      !Number.isInteger(manifest.window) || manifest.window < 2 ||
-      !/^[a-f0-9]{64}$/.test(manifest.onnx_sha256 || "")) {
-    throw new Error("Invalid or incompatible Aetherion M17 manifest.");
+      !Number.isInteger(manifest.window) || manifest.window < 2) {
+    throw new Error("Invalid Aetherion byte-level manifest.");
   }
-  if (manifest.quantization !== undefined &&
-      (!manifest.quantization ||
-       manifest.quantization.type !== "weight_only_symmetric_int4" ||
-       manifest.quantization.format !== "MatMulNBits" ||
-       !Number.isInteger(manifest.quantization.quantized_matmul_nodes) ||
-       manifest.quantization.quantized_matmul_nodes < 1)) {
-    throw new Error("Unrecognized quantization metadata.");
+  if (manifest.schema_version === 2) {
+    const validGraph = (g, name) => g && g.filename === name && isSha256(g.sha256);
+    if (!manifest.graphs ||
+        !validGraph(manifest.graphs.prefill, "prefill.onnx") ||
+        !validGraph(manifest.graphs.decode, "decode.onnx") ||
+        !Number.isInteger(manifest.n_layers) || manifest.n_layers < 1 ||
+        !Number.isInteger(manifest.n_heads) || manifest.n_heads < 1 ||
+        !Number.isInteger(manifest.head_dim) || manifest.head_dim < 2 ||
+        manifest.cache_policy !== "rebuild_relative_rope_at_window_boundary" ||
+        manifest.quantization !== undefined) {
+      throw new Error("Unsupported M19 KV-cache graph contract.");
+    }
+  } else if (manifest.schema_version === 1) {
+    if (!isSha256(manifest.onnx_sha256)) {
+      throw new Error("Missing M17/M18 model SHA-256.");
+    }
+    if (manifest.quantization !== undefined &&
+        (!manifest.quantization ||
+         manifest.quantization.type !== "weight_only_symmetric_int4" ||
+         manifest.quantization.format !== "MatMulNBits" ||
+         !Number.isInteger(manifest.quantization.quantized_matmul_nodes) ||
+         manifest.quantization.quantized_matmul_nodes < 1)) {
+      throw new Error("Unrecognized M18 quantization metadata.");
+    }
+  } else {
+    throw new Error("Unsupported mobile manifest version.");
   }
   return manifest;
+}
+
+function resetCache() {
+  state.cache = null;
+  state.cacheLength = 0;
+  state.cacheStats = { prefill: 0, decode: 0 };
+}
+
+function requireContract(session, expectedInputs, expectedOutputs) {
+  if (JSON.stringify(session.inputNames) !== JSON.stringify(expectedInputs) ||
+      JSON.stringify(session.outputNames) !== JSON.stringify(expectedOutputs)) {
+    throw new Error("ONNX graph input/output names do not match the mobile contract.");
+  }
 }
 
 async function loadModel() {
   if (state.running) return;
   setRunning(true);
-  const oldSession = state.session;
+  const previous = [state.session, state.decodeSession];
   state.session = null;
+  state.decodeSession = null;
   state.manifest = null;
+  resetCache();
   const onnxFile = $("onnx").files[0];
+  const decodeFile = $("decode").files[0];
   const manifestFile = $("manifest").files[0];
+  let prefillSession = null, decodeSession = null;
   try {
-    if (oldSession) await oldSession.release();
+    for (const session of previous) {
+      if (session) await session.release();
+    }
     if (!onnxFile || !manifestFile) {
-      throw new Error("Select both model.onnx and manifest.json.");
+      throw new Error("Select a prefill/model ONNX file and manifest.json.");
     }
     if (typeof ort === "undefined") {
       throw new Error("ONNX Runtime is missing. Run npm install and npm run stage-runtime.");
     }
-    status("Reading and verifying model...");
+    status("Verifying model files...");
     const manifest = validateManifest(JSON.parse(await manifestFile.text()));
-    const bytes = await onnxFile.arrayBuffer();
-    if ((await sha256(bytes)) !== manifest.onnx_sha256) {
-      throw new Error("Model SHA-256 mismatch. Refusing to load the wrong or modified model.");
+    if (manifest.schema_version === 2 && !decodeFile) {
+      throw new Error("M19 requires decode.onnx in addition to prefill.onnx.");
     }
-    ort.env.wasm.numThreads = 1; // No SharedArrayBuffer or cross-origin isolation needed.
+    const firstBytes = await onnxFile.arrayBuffer();
+    const firstSha = manifest.schema_version === 2 ?
+      manifest.graphs.prefill.sha256 : manifest.onnx_sha256;
+    if ((await sha256(firstBytes)) !== firstSha) {
+      throw new Error("Prefill/model SHA-256 mismatch.");
+    }
+    let decodeBytes = null;
+    if (manifest.schema_version === 2) {
+      decodeBytes = await decodeFile.arrayBuffer();
+      if ((await sha256(decodeBytes)) !== manifest.graphs.decode.sha256) {
+        throw new Error("Cached decode SHA-256 mismatch.");
+      }
+    }
+    ort.env.wasm.numThreads = 1;
     ort.env.wasm.wasmPaths = "./vendor/";
-    const session = await ort.InferenceSession.create(new Uint8Array(bytes), {
+    prefillSession = await ort.InferenceSession.create(new Uint8Array(firstBytes), {
       executionProviders: ["wasm"],
     });
-    if (!session.inputNames.includes("tokens") ||
-        !session.inputNames.includes("last_position") ||
-        !session.outputNames.includes("next_logits")) {
-      await session.release();
-      throw new Error("ONNX input/output names do not match the mobile contract.");
+    if (manifest.schema_version === 2) {
+      const cacheNames = cacheTensorNames(manifest.n_layers);
+      requireContract(prefillSession, ["tokens", "last_position"], ["next_logits", ...cacheNames]);
+      decodeSession = await ort.InferenceSession.create(new Uint8Array(decodeBytes), {
+        executionProviders: ["wasm"],
+      });
+      requireContract(decodeSession,
+        ["token_ids", "past_length", ...cacheTensorNames(manifest.n_layers, "past_")],
+        ["next_logits", ...cacheNames]);
+    } else {
+      requireContract(prefillSession, ["tokens", "last_position"], ["next_logits"]);
     }
-    state.session = session;
+    state.session = prefillSession;
+    state.decodeSession = decodeSession;
     state.manifest = manifest;
-    status("Model loaded locally. Window: " + manifest.window +
-           " byte tokens. Format: " +
-           (manifest.quantization ? "INT4 MatMulNBits" : "FP32") +
-           ". Output quality depends on the supplied checkpoint.");
+    const mode = manifest.schema_version === 2 ? "FP32 + KV cache" :
+      (manifest.quantization ? "INT4 full-window" : "FP32 full-window");
+    status("Model loaded locally. Window " + manifest.window + " bytes; " + mode +
+           ". Conversation quality depends on your actual checkpoint.");
   } catch (error) {
+    if (prefillSession) await prefillSession.release().catch(() => {});
+    if (decodeSession) await decodeSession.release().catch(() => {});
     status("Load failed: " + error.message, true);
   } finally {
     setRunning(false);
@@ -108,16 +179,44 @@ function argmax(values) {
 
 async function runByteStep(tokens) {
   const window = state.manifest.window;
+  if (state.manifest.schema_version === 2 &&
+      state.cache && state.cacheLength < window) {
+    const feeds = {
+      token_ids: new ort.Tensor("int64", BigInt64Array.of(BigInt(tokens.at(-1))), [1, 1]),
+      past_length: new ort.Tensor("int64", BigInt64Array.of(BigInt(state.cacheLength)), [1]),
+    };
+    for (let i = 0; i < state.manifest.n_layers; i++) {
+      feeds["past_key_" + i] = state.cache["key_" + i];
+      feeds["past_value_" + i] = state.cache["value_" + i];
+    }
+    const outputs = await state.decodeSession.run(feeds);
+    const newCache = {};
+    for (const key of cacheTensorNames(state.manifest.n_layers)) {
+      newCache[key] = outputs[key];
+    }
+    state.cache = newCache;
+    state.cacheLength++;
+    state.cacheStats.decode++;
+    return argmax(outputs.next_logits.data);
+  }
   const context = tokens.slice(-window);
   const input = new BigInt64Array(window);
   context.forEach((token, j) => { input[j] = BigInt(token); });
   const feeds = {
     tokens: new ort.Tensor("int64", input, [1, window]),
     last_position: new ort.Tensor("int64",
-      BigInt64Array.from([BigInt(context.length - 1)]), [1]),
+      BigInt64Array.of(BigInt(context.length - 1)), [1]),
   };
-  const results = await state.session.run(feeds);
-  return argmax(results.next_logits.data);
+  const outputs = await state.session.run(feeds);
+  if (state.manifest.schema_version === 2) {
+    state.cache = {};
+    for (const key of cacheTensorNames(state.manifest.n_layers)) {
+      state.cache[key] = outputs[key];
+    }
+    state.cacheLength = context.length;
+    state.cacheStats.prefill++;
+  }
+  return argmax(outputs.next_logits.data);
 }
 
 function displayBenchmark(samples, warmups, tokens, seconds) {
@@ -127,9 +226,13 @@ function displayBenchmark(samples, warmups, tokens, seconds) {
   const report = {
     schema_version: 1,
     kind: "aetherion-mobile-synthetic-on-device-benchmark",
-    inference_format: state.manifest.quantization ? "int4" : "fp32",
+    inference_format: state.manifest.schema_version === 2 ? "fp32_kv_cache" :
+      (state.manifest.quantization ? "int4_full_window" : "fp32_full_window"),
+    prefill_calls: state.cacheStats.prefill,
+    cached_decode_calls: state.cacheStats.decode,
     window_byte_tokens: state.manifest.window,
-    model_sha256: state.manifest.onnx_sha256,
+    model_sha256: state.manifest.schema_version === 2 ?
+      state.manifest.graphs.prefill.sha256 : state.manifest.onnx_sha256,
     device_ram_gb_reported_by_browser: navigator.deviceMemory ?? null,
     warmup_steps: warmups,
     measured_steps: tokens,
@@ -146,6 +249,7 @@ function displayBenchmark(samples, warmups, tokens, seconds) {
 async function benchmark() {
   if (!state.session || state.running) return;
   state.cancel = false;
+  resetCache();
   setRunning(true);
   $("benchmark-report").textContent = "";
   status("Benchmark: warming up on the current device...");
@@ -193,6 +297,7 @@ async function generate() {
     return;
   }
   state.cancel = false;
+  resetCache();
   setRunning(true);
   status("Running locally in this browser...");
   $("output").textContent = prompt;
