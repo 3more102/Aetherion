@@ -64,7 +64,7 @@ Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE �
 
 The research target for Aetherion-125M is **14 layers, width 768, 12 attention heads, 32k vocabulary, 2048 context and SwiGLU**, estimated around **124M parameters** with tied embeddings. This is a target, not implemented or trained in the Micro prototype.
 
-## Mobile inference prototype (M17–M21)
+## Mobile inference prototype (M17–M22)
 
 Aetherion-Micro has an experimental local ONNX Runtime Web/WASM
 inference path. M17 supports full-window FP32, M18 weight-only INT4,
@@ -83,7 +83,14 @@ Guides: [M17 setup](docs/M17_MOBILE.md),
 [M18 INT4](docs/M18_MOBILE_INT4.md),
 [M19 KV caching](docs/M19_MOBILE_KV_CACHE.md),
 [M20 combined INT4 + cache](docs/M20_MOBILE_INT4_CACHE.md), and
-[M21 PWA packaging/device benchmark](docs/M21_MOBILE_PWA_BENCH.md).
+[M21 PWA packaging/device benchmark](docs/M21_MOBILE_PWA_BENCH.md), and
+[M22 source-verified device comparison](docs/M22_MOBILE_DEVICE_VALIDATION.md).
+
+**M22 adds a local benchmark report comparison gate:** schema-v3 results
+retain the original FP32 graph SHA across INT4 conversions, and a Python
+CLI rejects mismatched models, contexts, browser hints and partial tests.
+It requires at least three reports per variant. No physical-device results
+or pretrained model weights are shipped with this tooling.
 
 ## Documentation
 
