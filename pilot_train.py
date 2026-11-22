@@ -6,6 +6,7 @@ import subprocess
 import sys
 
 from aetherion.corpus_gate import audit_corpus, require_review
+from aetherion.contamination import require_no_cross_split_findings
 from aetherion.presets import get_preset
 from aetherion.tokenizer_runtime import load_verified_tokenizer
 
@@ -14,6 +15,9 @@ def pilot_command(args):
     directory = Path(args.data_dir)
     report = audit_corpus(directory, args.allow_license)
     require_review(report, args.review)
+    # M27: a self-attested review cannot override known lexical leakage.
+    # The bounded scan must complete before tokenizer/model/hardware execution.
+    require_no_cross_split_findings(directory, args.allow_license)
     tokenizer, meta = load_verified_tokenizer(args.tokenizer)
     cfg = get_preset("125m")
     if tokenizer.get_vocab_size() != cfg.vocab_size:

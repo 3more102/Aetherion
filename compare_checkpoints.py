@@ -15,6 +15,7 @@ import torch
 
 from aetherion import Aetherion, ModelConfig
 from aetherion.corpus_gate import audit_corpus, require_review
+from aetherion.contamination import require_no_cross_split_findings
 from aetherion.evaluation import evaluate_tokens
 from aetherion.presets import get_preset
 from train import load_bpe_data, load_data, resolve_device
@@ -33,6 +34,7 @@ def compare(*, before, after, data_dir, tokenizer=None, review=None,
     directory = Path(data_dir)
     train_path, val_path = directory / "train.txt", directory / "validation.txt"
     review_sha = None
+    lexical_screen = None
     if demo:
         if tokenizer or review or allow_licenses:
             raise ValueError("--demo requires byte tokens and no approval artifacts")
@@ -45,6 +47,8 @@ def compare(*, before, after, data_dir, tokenizer=None, review=None,
             raise ValueError("Production requires BPE tokenizer, review and license allowlist")
         corpus_report = audit_corpus(directory, list(allow_licenses))
         require_review(corpus_report, review)
+        # M27: refuse known lexical split leakage before reading checkpoints.
+        lexical_screen = require_no_cross_split_findings(directory, list(allow_licenses))
         review_sha = digest_file(review)
         _, val, fingerprint, vocab = load_bpe_data(
             str(train_path), str(val_path), tokenizer
@@ -110,6 +114,12 @@ def compare(*, before, after, data_dir, tokenizer=None, review=None,
             "tokenizer_sha256": fingerprint.get("tokenizer_sha256"),
             "prepared_manifest_sha256": fingerprint.get("prepared_manifest_sha256"),
             "review_sha256": review_sha,
+            "lexical_screen_manifest_sha256": (lexical_screen["manifest_sha256"]
+                                               if lexical_screen else None),
+            "lexical_screen_candidate_pairs": (lexical_screen["candidate_pairs_compared"]
+                                               if lexical_screen else None),
+            "lexical_screen_findings_count": (lexical_screen["findings_count"]
+                                             if lexical_screen else None),
         },
         "model_config": meta["config"],
         "seed": meta["seed"],
