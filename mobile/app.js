@@ -74,7 +74,6 @@ function validateManifest(manifest) {
          !isSha256(manifest.graphs.decode.source_sha256))) {
       throw new Error("Unsupported M20 INT4 KV-cache manifest.");
     }
-    }
   } else if (manifest.schema_version === 1) {
     if (!isSha256(manifest.onnx_sha256)) {
       throw new Error("Missing M17/M18 model SHA-256.");
