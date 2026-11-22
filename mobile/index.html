@@ -4,6 +4,10 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#102536">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Aetherion">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <title>Aetherion Mobile</title>
@@ -24,6 +28,12 @@
 <body>
 <main>
   <h1>Aetherion Mobile</h1>
+  <section>
+    <h2>Install this experimental web app</h2>
+    <button id="install" type="button" hidden>Install on this device</button>
+    <p id="install-note" class="muted">On supported Android browsers, use Install app or Add to Home screen from the browser menu. On iPhone Safari, use Share → Add to Home Screen. An install button appears only when the browser offers it. HTTPS is required outside localhost.</p>
+    <p class="muted">Installing the shell does not install pretrained weights. Each session still requires you to choose the local ONNX files. Offline operation also depends on browser cache/storage retention.</p>
+  </section>
   <p>Experimental on-device text generation for Android and iPhone browsers. The model runs on your phone using WebAssembly, not a remote inference server.</p>
   <section>
     <h2>1. Load a checkpoint export</h2>
@@ -49,7 +59,8 @@
     <h3>Output</h3>
     <div id="output" aria-live="off"></div>
     <h3>Local device benchmark</h3>
-    <p class="muted">Run this benchmark separately with FP32 and INT4 exports of the same checkpoint, on the same phone. It measures byte tokens, not BPE tokens; no speedup is assumed.</p>
+    <p class="muted">Run separately with the FP32 and INT4 exports of the same checkpoint. The report separates prefill and cached decoding, includes optional browser heap readings (not device peak RAM), and measures UTF-8 byte tokens rather than BPE tokens. Nothing is uploaded.</p>
+    <button id="download-report" type="button" disabled>Save benchmark JSON</button>
     <pre id="benchmark-report" aria-label="Mobile benchmark JSON report"></pre>
   </section>
   <p class="muted">Research preview: Aetherion does not currently ship a validated conversational model. Random or minimally trained checkpoints may produce meaningless characters. INT4 exports may differ numerically from FP32. Runs only on modern WebAssembly-compatible phones with adequate memory.</p>
