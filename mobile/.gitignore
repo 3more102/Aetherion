@@ -2,3 +2,8 @@ node_modules/
 vendor/
 artifacts/
 .DS_Store
+
+# Reproducible packaging outputs created by npm run stage-runtime / pack-pwa
+icons/
+precache-assets.json
+dist/
