@@ -64,21 +64,26 @@ Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE �
 
 The research target for Aetherion-125M is **14 layers, width 768, 12 attention heads, 32k vocabulary, 2048 context and SwiGLU**, estimated around **124M parameters** with tied embeddings. This is a target, not implemented or trained in the Micro prototype.
 
-## Mobile inference prototype (M17–M20)
+## Mobile inference prototype (M17–M21)
 
-Aetherion-Micro now has a **mobile web/WASM prototype** using verified
-byte-token ONNX exports. M18 adds optional weight-only INT4 MatMulNBits
-conversion and an on-device benchmark report. M19 adds separate
-FP32 prefill and KV-cached decode ONNX graphs for single-byte inference.
-M20 combines INT4 weight-only quantization with the FP32 KV cache.
-The prototype does not
-ship assistant-quality model weights or a native mobile app, and phone
-compatibility is not universal.
+Aetherion-Micro has an experimental local ONNX Runtime Web/WASM
+inference path. M17 supports full-window FP32, M18 weight-only INT4,
+M19 prefill and FP32 KV-cached decode, and M20 weight-only INT4
+prefill/decode with FP32 K/V tensors.
 
-See [M17 mobile setup](docs/M17_MOBILE.md),
-[M18 INT4/benchmark guide](docs/M18_MOBILE_INT4.md), and
-[M19 KV-cache export/validation](docs/M19_MOBILE_KV_CACHE.md), and
-[M20 INT4 cached mobile export](docs/M20_MOBILE_INT4_CACHE.md).
+**M21 adds an installable offline-first static PWA package**, generated
+192/512-pixel icons, a downloadable deployment ZIP containing the pinned
+WebAssembly runtime, and an opt-in JSON benchmark with separate prefill,
+cached-decode and full-window timings. No prompts, checkpoints or model
+weights are bundled or sent to an inference server. The PWA requires an
+HTTPS host, browser install support and user-imported ONNX model files.
+It is **not** a native APK/IPA or a validated conversational assistant.
+
+Guides: [M17 setup](docs/M17_MOBILE.md),
+[M18 INT4](docs/M18_MOBILE_INT4.md),
+[M19 KV caching](docs/M19_MOBILE_KV_CACHE.md),
+[M20 combined INT4 + cache](docs/M20_MOBILE_INT4_CACHE.md), and
+[M21 PWA packaging/device benchmark](docs/M21_MOBILE_PWA_BENCH.md).
 
 ## Documentation
 

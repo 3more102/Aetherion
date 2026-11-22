@@ -2,7 +2,8 @@
 
 const $ = (id) => document.getElementById(id);
 const state = { session: null, decodeSession: null, manifest: null, cache: null,
-  cacheLength: 0, cacheStats: { prefill: 0, decode: 0 }, running: false, cancel: false };
+  cacheLength: 0, cacheStats: { prefill: 0, decode: 0 }, running: false, cancel: false,
+  modelBytes: 0, modelLoadAndVerifyMs: null, lastBenchmark: null };
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: false });
 
@@ -126,6 +127,10 @@ async function loadModel() {
   state.session = null;
   state.decodeSession = null;
   state.manifest = null;
+  state.lastBenchmark = null;
+  state.modelBytes = 0;
+  state.modelLoadAndVerifyMs = null;
+  $("download-report").disabled = true;
   resetCache();
   const onnxFile = $("onnx").files[0];
   const decodeFile = $("decode").files[0];
@@ -142,6 +147,7 @@ async function loadModel() {
       throw new Error("ONNX Runtime is missing. Run npm install and npm run stage-runtime.");
     }
     status("Verifying model files...");
+    const loadingStart = performance.now();
     const manifest = validateManifest(JSON.parse(await manifestFile.text()));
     if (isCachedManifest(manifest) && !decodeFile) {
       throw new Error("M19 requires decode.onnx in addition to prefill.onnx.");
@@ -179,6 +185,8 @@ async function loadModel() {
     state.session = prefillSession;
     state.decodeSession = decodeSession;
     state.manifest = manifest;
+    state.modelBytes = firstBytes.byteLength + (decodeBytes ? decodeBytes.byteLength : 0);
+    state.modelLoadAndVerifyMs = performance.now() - loadingStart;
     const mode = manifest.schema_version === 3 ? "INT4 weights + FP32 KV cache" :
       manifest.schema_version === 2 ? "FP32 + KV cache" :
       (manifest.quantization ? "INT4 full-window" : "FP32 full-window");
@@ -246,64 +254,144 @@ async function runByteStep(tokens) {
   return argmax(outputs.next_logits.data);
 }
 
-function displayBenchmark(samples, warmups, tokens, seconds) {
+function summarizeLatencies(samples) {
+  if (!samples.length) return null;
   const sorted = [...samples].sort((a, b) => a - b);
-  const median = sorted[Math.floor(sorted.length / 2)];
-  const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1];
+  const sum = sorted.reduce((a, b) => a + b, 0);
+  const round = (value) => Number(value.toFixed(3));
+  return {
+    samples: samples.length,
+    min_ms: round(sorted[0]),
+    mean_ms: round(sum / samples.length),
+    median_ms: round(sorted.length % 2 ?
+      sorted[Math.floor(sorted.length / 2)] :
+      (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2),
+    p95_ms: round(sorted[Math.ceil(sorted.length * 0.95) - 1]),
+    max_ms: round(sorted[sorted.length - 1]),
+  };
+}
+
+function browserHeapBytes() {
+  // performance.memory is nonstandard and absent on most iOS browsers.
+  const bytes = performance?.memory?.usedJSHeapSize;
+  return Number.isSafeInteger(bytes) && bytes >= 0 ? bytes : null;
+}
+
+function modelFormat(manifest) {
+  return manifest.schema_version === 3 ? "int4_kv_cache" :
+    manifest.schema_version === 2 ? "fp32_kv_cache" :
+    (manifest.quantization ? "int4_full_window" : "fp32_full_window");
+}
+
+function displayBenchmark(phases, warmups, elapsedMs, memoryBefore, memoryAfter, interrupted) {
+  const all = [...phases.prefill, ...phases.decode, ...phases.full_window];
+  const measured = all.length;
+  const cacheBytes = isCachedManifest(state.manifest) ?
+    2 * state.manifest.n_layers * state.manifest.n_heads *
+      state.manifest.window * state.manifest.head_dim * 4 : 0;
   const report = {
-    schema_version: 1,
-    kind: "aetherion-mobile-synthetic-on-device-benchmark",
-    inference_format: state.manifest.schema_version === 3 ? "int4_kv_cache" :
-      state.manifest.schema_version === 2 ? "fp32_kv_cache" :
-      (state.manifest.quantization ? "int4_full_window" : "fp32_full_window"),
-    prefill_calls: state.cacheStats.prefill,
-    cached_decode_calls: state.cacheStats.decode,
-    window_byte_tokens: state.manifest.window,
+    schema_version: 2,
+    kind: "aetherion-mobile-local-browser-inference-benchmark",
+    generated_at_utc: new Date().toISOString(),
+    scope: "offline-local-single-thread-wasm-byte-token-inference",
+    inference_format: modelFormat(state.manifest),
     model_sha256: isCachedManifest(state.manifest) ?
       state.manifest.graphs.prefill.sha256 : state.manifest.onnx_sha256,
-    device_ram_gb_reported_by_browser: navigator.deviceMemory ?? null,
-    warmup_steps: warmups,
-    measured_steps: tokens,
-    elapsed_seconds: Number(seconds.toFixed(4)),
-    tokens_per_second: Number((tokens / seconds).toFixed(3)),
-    median_step_ms: Number(median.toFixed(2)),
-    p95_step_ms: Number(p95.toFixed(2)),
-    user_agent: navigator.userAgent,
-    disclaimer: "Local synthetic benchmark, not a validated device matrix or assistant quality measurement.",
+    model_manifest_schema: state.manifest.schema_version,
+    model_file_bytes: state.modelBytes,
+    model_load_and_sha_verify_ms: state.modelLoadAndVerifyMs === null ?
+      null : Number(state.modelLoadAndVerifyMs.toFixed(3)),
+    window_byte_tokens: state.manifest.window,
+    warmup_steps_completed: warmups,
+    measured_steps: measured,
+    interrupted: Boolean(interrupted),
+    prefill_calls_including_warmup: state.cacheStats.prefill,
+    cached_decode_calls_including_warmup: state.cacheStats.decode,
+    elapsed_inference_and_feeds_seconds: Number((elapsedMs / 1000).toFixed(4)),
+    byte_tokens_per_inference_second: measured ?
+      Number((1000 * measured / elapsedMs).toFixed(3)) : null,
+    latency_ms: {
+      overall: summarizeLatencies(all),
+      prefill: summarizeLatencies(phases.prefill),
+      decode: summarizeLatencies(phases.decode),
+      full_window: summarizeLatencies(phases.full_window),
+    },
+    memory: {
+      estimated_one_copy_fp32_kv_cache_bytes: cacheBytes,
+      browser_js_heap_before_bytes_if_available: memoryBefore,
+      browser_js_heap_after_bytes_if_available: memoryAfter,
+      device_ram_gb_reported_by_browser: navigator.deviceMemory ?? null,
+      limitation: "KV estimate excludes temporary/multiple caches, weights, WASM heap and browser overhead. JS heap is not measured peak process RAM.",
+    },
+    device: {
+      user_agent: navigator.userAgent ?? null,
+      hardware_concurrency_reported: navigator.hardwareConcurrency ?? null,
+      installed_standalone: (typeof window !== "undefined" &&
+        window.matchMedia?.("(display-mode: standalone)")?.matches) ||
+        navigator.standalone === true,
+    },
+    disclaimer: "Untrained-model technical benchmark only. No network upload. Byte tokens are not LLM BPE tokens; no language-quality, battery-life or cross-device speed claims.",
   };
+  state.lastBenchmark = report;
   $("benchmark-report").textContent = JSON.stringify(report, null, 2);
+  $("download-report").disabled = false;
+  return report;
+}
+
+function downloadBenchmark() {
+  if (!state.lastBenchmark) return;
+  // No automatic telemetry. JSON is saved only from an explicit user click.
+  const blob = new Blob([JSON.stringify(state.lastBenchmark, null, 2) + "\n"],
+                        { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "aetherion-m21-device-benchmark.json";
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 async function benchmark() {
   if (!state.session || state.running) return;
   state.cancel = false;
   resetCache();
+  state.lastBenchmark = null;
+  $("download-report").disabled = true;
   setRunning(true);
   $("benchmark-report").textContent = "";
   status("Benchmark: warming up on the current device...");
-  const tokens = Array.from(encoder.encode("Hi")); // Short prompt exercises the decode cache on tiny test windows.
+  // Short prompt tests real cached decoding with small context fixtures.
+  const tokens = Array.from(encoder.encode("Hi"));
   const warmups = 2;
   const steps = 16;
-  const timings = [];
+  const phases = { prefill: [], decode: [], full_window: [] };
+  const memoryBefore = browserHeapBytes();
   let completed = 0;
+  let warmed = 0;
   try {
     for (let i = 0; i < warmups + steps && !state.cancel; i++) {
+      const type = !isCachedManifest(state.manifest) ? "full_window" :
+        state.cache && state.cacheLength < state.manifest.window ? "decode" : "prefill";
       const begin = performance.now();
       const next = await runByteStep(tokens);
       const elapsed = performance.now() - begin;
       tokens.push(next);
       if (i >= warmups) {
-        timings.push(elapsed);
+        phases[type].push(elapsed);
         completed++;
+      } else {
+        warmed++;
       }
+      // Excluded from timing. Allows UI paint and stop between inference calls.
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
     if (completed) {
-      const seconds = timings.reduce((a, b) => a + b, 0) / 1000;
-      displayBenchmark(timings, Math.min(warmups, tokens.length), completed, seconds);
+      const elapsedMs = Object.values(phases).flat().reduce((a, b) => a + b, 0);
+      displayBenchmark(phases, warmed,
+        elapsedMs, memoryBefore, browserHeapBytes(), state.cancel);
     }
-    status(state.cancel ? "Benchmark interrupted." :
-           "Benchmark completed locally; measurements are for this browser and model only.");
+    status(state.cancel ? "Benchmark interrupted (partial results saved if measured)." :
+           "Benchmark complete. Export JSON to compare the same model on another phone.");
   } catch (error) {
     status("Benchmark failed: " + error.message, true);
   } finally {
@@ -354,8 +442,30 @@ async function generate() {
 $("load").addEventListener("click", loadModel);
 $("generate").addEventListener("click", generate);
 $("benchmark").addEventListener("click", benchmark);
+$("download-report").addEventListener("click", downloadBenchmark);
 $("stop").addEventListener("click", () => { state.cancel = true; });
-if ("serviceWorker" in navigator && location.protocol === "https:") {
+let deferredInstallPrompt = null;
+if (typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    $("install").hidden = false;
+  });
+  window.addEventListener("appinstalled", () => {
+    deferredInstallPrompt = null;
+    $("install").hidden = true;
+    $("install-note").textContent = "Aetherion has been added to this device.";
+  });
+}
+$("install").addEventListener("click", async () => {
+  if (!deferredInstallPrompt) return;
+  const event = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  $("install").hidden = true;
+  await event.prompt();
+  await event.userChoice;
+});
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
   navigator.serviceWorker.register("./sw.js").catch(() => {});
 }
 status("Select an exported checkpoint model and its manifest. No network inference API is used.");

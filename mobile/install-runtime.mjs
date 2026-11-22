@@ -1,5 +1,6 @@
 // Stage the pinned ONNX Runtime Web assets for private, self-hosted offline use.
-import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 const source = join("node_modules", "onnxruntime-web", "dist");
 const target = "vendor";
@@ -17,4 +18,20 @@ for (const filename of readdirSync(source)) {
 if (!existsSync(join(target, "ort.wasm.min.js")) || !copied) {
   throw new Error("Expected ort.wasm.min.js missing; inspect the pinned package distribution.");
 }
-console.log("Staged " + copied + " ONNX Runtime assets to mobile/vendor");
+// The PWA install must include whichever pinned WASM variant ORT selects.
+execFileSync(process.execPath, ["generate-icons.mjs"], { stdio: "inherit" });
+const runtimeFiles = readdirSync(target)
+  .filter((name) => name.startsWith("ort") && /\.(?:js|mjs|wasm)$/.test(name))
+  .map((name) => "./vendor/" + name);
+const requiredAssets = [
+  "./", "./index.html", "./app.js", "./sw.js", "./precache-assets.json", "./manifest.webmanifest", "./icon.svg",
+  "./icons/icon-192.png", "./icons/icon-512.png",
+  ...runtimeFiles,
+];
+if (!runtimeFiles.includes("./vendor/ort.wasm.min.js") ||
+    !runtimeFiles.some((p) => p.endsWith(".wasm"))) {
+  throw new Error("Offline PWA needs the pinned ORT entrypoint and WebAssembly binary.");
+}
+writeFileSync("precache-assets.json",
+  JSON.stringify({ schema_version: 1, assets: requiredAssets }, null, 2) + "\n");
+console.log("Staged " + copied + " ONNX Runtime assets and generated install/offline assets");
