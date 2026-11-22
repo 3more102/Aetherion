@@ -263,7 +263,9 @@ function summarizeLatencies(samples) {
     samples: samples.length,
     min_ms: round(sorted[0]),
     mean_ms: round(sum / samples.length),
-    median_ms: round(sorted[Math.floor(sorted.length / 2)]),
+    median_ms: round(sorted.length % 2 ?
+      sorted[Math.floor(sorted.length / 2)] :
+      (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2),
     p95_ms: round(sorted[Math.ceil(sorted.length * 0.95) - 1]),
     max_ms: round(sorted[sorted.length - 1]),
   };
@@ -300,7 +302,7 @@ function displayBenchmark(phases, warmups, elapsedMs, memoryBefore, memoryAfter,
     model_load_and_sha_verify_ms: state.modelLoadAndVerifyMs === null ?
       null : Number(state.modelLoadAndVerifyMs.toFixed(3)),
     window_byte_tokens: state.manifest.window,
-    warmup_steps_requested: warmups,
+    warmup_steps_completed: warmups,
     measured_steps: measured,
     interrupted: Boolean(interrupted),
     prefill_calls_including_warmup: state.cacheStats.prefill,
@@ -365,6 +367,7 @@ async function benchmark() {
   const phases = { prefill: [], decode: [], full_window: [] };
   const memoryBefore = browserHeapBytes();
   let completed = 0;
+  let warmed = 0;
   try {
     for (let i = 0; i < warmups + steps && !state.cancel; i++) {
       const type = !isCachedManifest(state.manifest) ? "full_window" :
@@ -376,13 +379,15 @@ async function benchmark() {
       if (i >= warmups) {
         phases[type].push(elapsed);
         completed++;
+      } else {
+        warmed++;
       }
       // Excluded from timing. Allows UI paint and stop between inference calls.
       await new Promise((resolve) => requestAnimationFrame(resolve));
     }
     if (completed) {
       const elapsedMs = Object.values(phases).flat().reduce((a, b) => a + b, 0);
-      displayBenchmark(phases, Math.min(warmups, tokens.length),
+      displayBenchmark(phases, warmed,
         elapsedMs, memoryBefore, browserHeapBytes(), state.cancel);
     }
     status(state.cancel ? "Benchmark interrupted (partial results saved if measured)." :
