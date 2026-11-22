@@ -17,8 +17,8 @@ def benchmark(*, preset="micro", device="cpu", precision="fp32", batch_size=1,
     if min(batch_size, accumulation, steps) < 1 or warmup < 0:
         raise ValueError("Invalid benchmark counts")
     device = torch.device(resolve_device(device))
-    if device.type not in ("cpu", "cuda"):
-        raise ValueError("Benchmark supports CPU and CUDA")
+    if device.type not in ("cpu", "cuda", "xpu"):
+        raise ValueError("Benchmark supports CPU, CUDA and XPU")
     precision_context(device, precision)
     torch.manual_seed(42)
     cfg = get_preset(preset)
@@ -26,8 +26,9 @@ def benchmark(*, preset="micro", device="cpu", precision="fp32", batch_size=1,
         if not 2 <= context <= cfg.block_size:
             raise ValueError("Invalid context override")
         cfg = replace(cfg, block_size=context)
-    if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
+    accelerator = getattr(torch, device.type) if device.type in ("cuda", "xpu") else None
+    if accelerator is not None:
+        accelerator.reset_peak_memory_stats(device)
     model = Aetherion(cfg).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
     model.train()
@@ -35,8 +36,8 @@ def benchmark(*, preset="micro", device="cpu", precision="fp32", batch_size=1,
         tokens = torch.randint(cfg.vocab_size, (batch_size, cfg.block_size + 1), device=device)
         return tokens[:, :-1], tokens[:, 1:]
     def sync():
-        if device.type == "cuda":
-            torch.cuda.synchronize(device)
+        if accelerator is not None:
+            accelerator.synchronize(device)
     for _ in range(warmup):
         optimizer_step(model, optimizer, batch, accumulation=accumulation, device=device, precision=precision)
     sync()
@@ -47,14 +48,16 @@ def benchmark(*, preset="micro", device="cpu", precision="fp32", batch_size=1,
     seconds = time.perf_counter() - start
     tokens = steps * batch_size * accumulation * cfg.block_size
     return {"synthetic": True, "preset": preset, "device": str(device),
-            "hardware": torch.cuda.get_device_name(device) if device.type == "cuda" else platform.processor() or platform.machine(),
+            "hardware": accelerator.get_device_name(device) if accelerator is not None else platform.processor() or platform.machine(),
             "torch_version": str(torch.__version__), "precision": precision,
             "parameters": sum(p.numel() for p in model.parameters()),
             "context": cfg.block_size, "batch_size": batch_size, "accumulation": accumulation,
             "warmup_updates": warmup, "measured_updates": steps, "tokens": tokens,
             "seconds": seconds, "tokens_per_second": tokens / seconds, "last_loss": loss,
             "cuda_peak_allocated_bytes": torch.cuda.max_memory_allocated(device) if device.type == "cuda" else None,
-            "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(device) if device.type == "cuda" else None}
+            "cuda_peak_reserved_bytes": torch.cuda.max_memory_reserved(device) if device.type == "cuda" else None,
+            "xpu_peak_allocated_bytes": torch.xpu.max_memory_allocated(device) if device.type == "xpu" else None,
+            "xpu_peak_reserved_bytes": torch.xpu.max_memory_reserved(device) if device.type == "xpu" else None}
 
 
 def main():

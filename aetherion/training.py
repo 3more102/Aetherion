@@ -1,5 +1,6 @@
 """Shared optimizer step, fixed-horizon schedule and BF16 autocast."""
 from contextlib import nullcontext
+from aetherion.devices import xpu_available
 import math
 import torch
 
@@ -24,14 +25,20 @@ def learning_rate(step, *, peak, warmup=0, horizon=0, min_ratio=0.1):
 
 def precision_context(device, precision):
     kind = torch.device(device).type
+    if kind == "xpu" and not xpu_available():
+        raise ValueError("XPU unavailable")
     if precision == "fp32":
         return nullcontext()
-    if precision != "bf16" or kind not in ("cpu", "cuda"):
-        raise ValueError("BF16 autocast is supported on CPU and compatible CUDA devices only")
+    if precision != "bf16" or kind not in ("cpu", "cuda", "xpu"):
+        raise ValueError("BF16 autocast is supported on CPU and compatible CUDA/XPU devices only")
     if kind == "cuda":
         with torch.cuda.device(device):
             if not torch.cuda.is_bf16_supported():
                 raise ValueError("Selected CUDA device does not support BF16")
+    if kind == "xpu":
+        with torch.xpu.device(device):
+            if not torch.xpu.is_bf16_supported():
+                raise ValueError("Selected XPU device does not support BF16")
     return torch.autocast(device_type=kind, dtype=torch.bfloat16)
 
 

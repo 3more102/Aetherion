@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 import torch
+from aetherion.devices import xpu_available
 
 FORMAT_VERSION = 2
 
@@ -29,6 +30,8 @@ def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step,
         "cuda_rng_states": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
         "train_generator_state": train_rng.get_state(),
     }
+    if next(model.parameters()).device.type == "xpu":
+        payload["xpu_rng_states"] = torch.xpu.get_rng_state_all()
     fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
     try:
         with os.fdopen(fd, "wb") as handle:
@@ -63,10 +66,18 @@ def load_training_checkpoint(path, *, model, optimizer, train_rng, config, seed,
     stored_cuda = checkpoint.get("cuda_rng_states", [])
     if stored_cuda and torch.cuda.is_available() and len(stored_cuda) != torch.cuda.device_count():
         raise ValueError("Cannot resume: CUDA device count differs from checkpoint")
+    stored_xpu = checkpoint.get("xpu_rng_states", [])
+    on_xpu = next(model.parameters()).device.type == "xpu"
+    if on_xpu and (not xpu_available() or len(stored_xpu) != torch.xpu.device_count()):
+        raise ValueError("Cannot resume: XPU RNG state or device count differs from checkpoint")
+    if stored_xpu and not on_xpu:
+        raise ValueError("Cannot resume an XPU checkpoint on another backend")
     model.load_state_dict(checkpoint["state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
     torch.set_rng_state(checkpoint["torch_rng_state"])
     if stored_cuda and torch.cuda.is_available():
         torch.cuda.set_rng_state_all(stored_cuda)
+    if on_xpu:
+        torch.xpu.set_rng_state_all(stored_xpu)
     train_rng.set_state(checkpoint["train_generator_state"])
     return step
