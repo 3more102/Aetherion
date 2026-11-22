@@ -156,6 +156,23 @@ const storage = makeStorage();
 const first = makeApp(storage);
 await first.flush();
 assert.equal(storage.writes, 0, "No implicit model persistence");
+
+// M26: reject unsafe advertised window before any ONNX session creation.
+const oversize = makeApp(storage);
+await oversize.flush();
+const dummyModel = Uint8Array.from([1, 2, 3]);
+oversize.node("onnx").files = [makeFile(dummyModel, "model.onnx")];
+oversize.node("manifest").files = [makeFile(
+  new TextEncoder().encode(JSON.stringify({
+    schema_version: 1, architecture: "aetherion-micro",
+    tokenizer_type: "utf8_bytes", vocab_size: 256,
+    window: 4097, onnx_sha256: hash(dummyModel),
+  })), "manifest.json",
+)];
+await oversize.click("load");
+assert.equal(oversize.sessions, 0, "Oversized context must fail before ONNX initialization");
+assert.match(oversize.node("status").textContent, /4096/);
+assert.equal(storage.writes, 0, "Failed import must not persist model bytes");
 assert.equal(first.node("restore-model").disabled, true);
 const source = Uint8Array.from([1, 2, 3, 4, 5]);
 const manifest = {
