@@ -30,7 +30,7 @@ def quantize_mobile_int4(
     import numpy as np
     import onnx
     import onnxruntime as ort
-    from onnxruntime.quantization import matmul_4bits_quantizer, quant_utils
+    from onnxruntime.quantization import matmul_nbits_quantizer, quant_utils
 
     source = Path(model_path)
     manifest_file = Path(manifest_path)
@@ -61,7 +61,8 @@ def quantize_mobile_int4(
     if output.resolve() == source.resolve() or output_manifest.resolve() == manifest_file.resolve():
         raise ValueError("INT4 output would overwrite a source artifact")
 
-    config = matmul_4bits_quantizer.DefaultWeightOnlyQuantConfig(
+    config = matmul_nbits_quantizer.DefaultWeightOnlyQuantConfig(
+        bits=4,
         block_size=block_size,
         is_symmetric=True,
         accuracy_level=4,
@@ -70,7 +71,7 @@ def quantize_mobile_int4(
         quant_axes=(("MatMul", 0),),
     )
     model = quant_utils.load_model_with_shape_infer(source)
-    quantizer = matmul_4bits_quantizer.MatMul4BitsQuantizer(
+    quantizer = matmul_nbits_quantizer.MatMulNBitsQuantizer(
         model, algo_config=config
     )
     quantizer.process()
