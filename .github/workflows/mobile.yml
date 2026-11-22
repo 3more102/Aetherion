@@ -13,11 +13,20 @@ jobs:
           python-version: "3.11"
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements.txt onnx==1.23.2 onnxruntime==1.32.0 onnx_ir
-      - run: python -m pytest -q tests/test_mobile_export.py tests/test_mobile_quantization.py tests/test_mobile_cached.py tests/test_mobile_cached_quantization.py
+      - run: python -m pytest -q tests/test_mobile_export.py tests/test_mobile_quantization.py tests/test_mobile_cached.py tests/test_mobile_cached_quantization.py tests/test_mobile_package.py
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: cd mobile && npm install --no-audit --no-fund && npm run stage-runtime && npm run check
+      - run: cd mobile && npm install --no-audit --no-fund && npm run stage-runtime && npm run check && npm run check-pwa
       - run: python -m mobile.ci_synthetic_models mobile/artifacts/ci
       - run: node mobile/runtime_smoke.mjs mobile/artifacts/ci
       - run: node mobile/app_state_smoke.mjs
+      - run: node mobile/benchmark_smoke.mjs
+      - run: python mobile/package_pwa.py --output mobile/dist/aetherion-mobile-pwa.zip
+      - run: python -m zipfile -t mobile/dist/aetherion-mobile-pwa.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aetherion-mobile-m21-pwa
+          path: mobile/dist/aetherion-mobile-pwa.zip
+          if-no-files-found: error
+          retention-days: 14
