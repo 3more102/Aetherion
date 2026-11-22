@@ -1,0 +1,13 @@
+{
+  "name": "Aetherion Mobile",
+  "short_name": "Aetherion",
+  "description": "On-device experimental Aetherion text generation",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0c1925",
+  "theme_color": "#102536",
+  "icons": [
+    {"src":"./icon.svg","sizes":"any","type":"image/svg+xml"}
+  ]
+}
