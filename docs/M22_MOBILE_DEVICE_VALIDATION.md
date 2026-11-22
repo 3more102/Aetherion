@@ -15,7 +15,9 @@ Source provenance is taken from the validated **M17/M19 FP32 manifest SHA**
 or the **M18/M20 source graph metadata**, never guessed from filenames.
 Model file bytes, inference format, manifest schema, and device hints remain
 in the report. The local app does not upload files, benchmark results or
-prompt text.
+prompt text. The source hash is **unsigned manifest metadata**, not a
+cryptographic attestation of the conversion process; independent trust in
+that manifest and its creation still matters.
 
 M21 schema-v2 reports **cannot** prove this pairing and are intentionally
 not accepted by the M22 comparator. Collect new M22 reports from the updated
