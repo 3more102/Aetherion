@@ -37,3 +37,53 @@ async function testModel(filename) {
 
 await testModel(join(root, "fp32", "model.onnx"));
 await testModel(join(root, "int4", "model.int4.onnx"));
+
+
+// M19: run true prefill -> cached single-token decode in the shipped WASM
+// engine; compare the decoded token logits with a full-window FP32 graph.
+const cachedRoot = join(root, "cached");
+const prefill = await ort.InferenceSession.create(
+  new Uint8Array(readFileSync(join(cachedRoot, "prefill.onnx"))),
+  { executionProviders: ["wasm"] }
+);
+const decode = await ort.InferenceSession.create(
+  new Uint8Array(readFileSync(join(cachedRoot, "decode.onnx"))),
+  { executionProviders: ["wasm"] }
+);
+const legacy = await ort.InferenceSession.create(
+  new Uint8Array(readFileSync(join(root, "fp32", "model.onnx"))),
+  { executionProviders: ["wasm"] }
+);
+try {
+  const inputs = new BigInt64Array(8);
+  inputs[0] = 65n; inputs[1] = 66n; inputs[2] = 67n;
+  const first = await prefill.run({
+    tokens: new ort.Tensor("int64", inputs, [1, 8]),
+    last_position: new ort.Tensor("int64", BigInt64Array.of(2n), [1]),
+  });
+  assert.equal(first.next_logits.data.length, 256);
+  const feeds = {
+    token_ids: new ort.Tensor("int64", BigInt64Array.of(68n), [1, 1]),
+    past_length: new ort.Tensor("int64", BigInt64Array.of(3n), [1]),
+  };
+  for (let i = 0; i < 2; i++) {
+    feeds["past_key_" + i] = first["key_" + i];
+    feeds["past_value_" + i] = first["value_" + i];
+  }
+  const second = await decode.run(feeds);
+  assert.equal(second.next_logits.data.length, 256);
+  const full = new BigInt64Array(8);
+  full.set([65n, 66n, 67n, 68n]);
+  const expected = await legacy.run({
+    tokens: new ort.Tensor("int64", full, [1, 8]),
+    last_position: new ort.Tensor("int64", BigInt64Array.of(3n), [1]),
+  });
+  const maxDiff = Array.from(second.next_logits.data).reduce((worst, x, i) =>
+    Math.max(worst, Math.abs(x - expected.next_logits.data[i])), 0);
+  assert.ok(maxDiff < 0.0002, "Cached WASM logits differ from full window: " + maxDiff);
+  console.log("M19 cached prefill + decode ORT Web WASM parity OK (max difference", maxDiff, ")");
+} finally {
+  await prefill.release();
+  await decode.release();
+  await legacy.release();
+}

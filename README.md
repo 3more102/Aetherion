@@ -64,15 +64,19 @@ Input bytes → token embeddings → N × (RMSNorm → causal attention + RoPE �
 
 The research target for Aetherion-125M is **14 layers, width 768, 12 attention heads, 32k vocabulary, 2048 context and SwiGLU**, estimated around **124M parameters** with tied embeddings. This is a target, not implemented or trained in the Micro prototype.
 
-## Mobile inference prototype (M17–M18)
+## Mobile inference prototype (M17–M19)
 
 Aetherion-Micro now has a **mobile web/WASM prototype** using verified
 byte-token ONNX exports. M18 adds optional weight-only INT4 MatMulNBits
-conversion and an on-device benchmark report. The prototype does not
+conversion and an on-device benchmark report. M19 adds separate
+FP32 prefill and KV-cached decode ONNX graphs for single-byte inference.
+The prototype does not
 ship assistant-quality model weights or a native mobile app, and phone
 compatibility is not universal.
 
-See [M17 mobile setup](docs/M17_MOBILE.md) and [M18 INT4/benchmark guide](docs/M18_MOBILE_INT4.md).
+See [M17 mobile setup](docs/M17_MOBILE.md),
+[M18 INT4/benchmark guide](docs/M18_MOBILE_INT4.md), and
+[M19 KV-cache export/validation](docs/M19_MOBILE_KV_CACHE.md).
 
 ## Documentation
 
