@@ -24,7 +24,7 @@ const runtimeFiles = readdirSync(target)
   .filter((name) => name.startsWith("ort") && /\.(?:js|mjs|wasm)$/.test(name))
   .map((name) => "./vendor/" + name);
 const requiredAssets = [
-  "./", "./index.html", "./app.js", "./manifest.webmanifest", "./icon.svg",
+  "./", "./index.html", "./app.js", "./sw.js", "./manifest.webmanifest", "./icon.svg",
   "./icons/icon-192.png", "./icons/icon-512.png",
   ...runtimeFiles,
 ];
