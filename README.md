@@ -160,6 +160,19 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M29: Per-checkpoint validation evidence
+
+After a trusted training checkpoint exists, `assess_checkpoint.py` can
+produce a collision-safe, provenance-checked JSON report for one held-out
+validation split. It records the SHA-256 checkpoint digest, exact
+next-token NLL/perplexity and target count, model configuration, seed,
+training settings and data/tokenizer hashes. Real 125M mode enforces
+independent review, a 32k BPE tokenizer, and the M27 lexical screen
+before opening weights; `--demo` explicitly labels unreviewed byte
+fixtures. This is not training, a test-set quality benchmark, or proof
+of conversational ability. See
+[M29 checkpoint evaluation evidence](docs/M29_CHECKPOINT_EVIDENCE.md).
+
 ## M28: benchmark-backed 125M execution safety gate
 
 The `pilot_train.py` dry-run remains available with approved dataset,
