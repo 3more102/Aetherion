@@ -50,17 +50,39 @@ function validateManifest(manifest) {
       !Number.isInteger(manifest.window) || manifest.window < 2) {
     throw new Error("Invalid Aetherion byte-level manifest.");
   }
-  if (manifest.schema_version === 2) {
-    const validGraph = (g, name) => g && g.filename === name && isSha256(g.sha256);
+  if (manifest.schema_version === 2 || manifest.schema_version === 3) {
+    const v3 = manifest.schema_version === 3;
+    const prefillName = v3 ? "prefill.int4.onnx" : "prefill.onnx";
+    const decodeName = v3 ? "decode.int4.onnx" : "decode.onnx";
+    const validGraph = (graph, expected) =>
+      graph && graph.filename === expected && isSha256(graph.sha256);
     if (!manifest.graphs ||
-        !validGraph(manifest.graphs.prefill, "prefill.onnx") ||
-        !validGraph(manifest.graphs.decode, "decode.onnx") ||
+        !validGraph(manifest.graphs.prefill, prefillName) ||
+        !validGraph(manifest.graphs.decode, decodeName) ||
         !Number.isInteger(manifest.n_layers) || manifest.n_layers < 1 ||
         !Number.isInteger(manifest.n_heads) || manifest.n_heads < 1 ||
         !Number.isInteger(manifest.head_dim) || manifest.head_dim < 2 ||
-        manifest.cache_policy !== "rebuild_relative_rope_at_window_boundary" ||
-        manifest.quantization !== undefined) {
-      throw new Error("Unsupported M19 KV-cache graph contract.");
+        manifest.cache_policy !== "rebuild_relative_rope_at_window_boundary") {
+      throw new Error("Unsupported M19/M20 KV-cache graph contract.");
+    }
+    if (v3) {
+      const q = manifest.quantization;
+      if (!q || q.type !== "weight_only_symmetric_int4" ||
+          q.format !== "MatMulNBits" || q.kv_cache_dtype !== "float32" ||
+          !Number.isInteger(q.block_size) || q.block_size < 16 ||
+          (q.block_size & (q.block_size - 1)) !== 0 ||
+          !q.converted_matmul_nodes ||
+          !Number.isInteger(q.converted_matmul_nodes.prefill) ||
+          !Number.isInteger(q.converted_matmul_nodes.decode) ||
+          q.converted_matmul_nodes.prefill < 1 ||
+          q.converted_matmul_nodes.decode < 1 ||
+          !manifest.source_graphs ||
+          !isSha256(manifest.source_graphs.prefill?.sha256) ||
+          !isSha256(manifest.source_graphs.decode?.sha256)) {
+        throw new Error("Invalid M20 INT4 metadata.");
+      }
+    } else if (manifest.quantization !== undefined) {
+      throw new Error("M19 schema 2 cannot contain INT4 metadata.");
     }
   } else if (manifest.schema_version === 1) {
     if (!isSha256(manifest.onnx_sha256)) {
@@ -78,6 +100,10 @@ function validateManifest(manifest) {
     throw new Error("Unsupported mobile manifest version.");
   }
   return manifest;
+}
+
+function isCachedManifest(manifest) {
+  return manifest.schema_version === 2 || manifest.schema_version === 3;
 }
 
 function resetCache() {
@@ -117,17 +143,17 @@ async function loadModel() {
     }
     status("Verifying model files...");
     const manifest = validateManifest(JSON.parse(await manifestFile.text()));
-    if (manifest.schema_version === 2 && !decodeFile) {
+    if (isCachedManifest(manifest) && !decodeFile) {
       throw new Error("M19 requires decode.onnx in addition to prefill.onnx.");
     }
     const firstBytes = await onnxFile.arrayBuffer();
-    const firstSha = manifest.schema_version === 2 ?
+    const firstSha = isCachedManifest(manifest) ?
       manifest.graphs.prefill.sha256 : manifest.onnx_sha256;
     if ((await sha256(firstBytes)) !== firstSha) {
       throw new Error("Prefill/model SHA-256 mismatch.");
     }
     let decodeBytes = null;
-    if (manifest.schema_version === 2) {
+    if (isCachedManifest(manifest)) {
       decodeBytes = await decodeFile.arrayBuffer();
       if ((await sha256(decodeBytes)) !== manifest.graphs.decode.sha256) {
         throw new Error("Cached decode SHA-256 mismatch.");
@@ -138,7 +164,7 @@ async function loadModel() {
     prefillSession = await ort.InferenceSession.create(new Uint8Array(firstBytes), {
       executionProviders: ["wasm"],
     });
-    if (manifest.schema_version === 2) {
+    if (isCachedManifest(manifest)) {
       const cacheNames = cacheTensorNames(manifest.n_layers);
       requireContract(prefillSession, ["tokens", "last_position"], ["next_logits", ...cacheNames]);
       decodeSession = await ort.InferenceSession.create(new Uint8Array(decodeBytes), {
@@ -153,7 +179,8 @@ async function loadModel() {
     state.session = prefillSession;
     state.decodeSession = decodeSession;
     state.manifest = manifest;
-    const mode = manifest.schema_version === 2 ? "FP32 + KV cache" :
+    const mode = manifest.schema_version === 3 ? "INT4 weights + FP32 KV cache" :
+      manifest.schema_version === 2 ? "FP32 + KV cache" :
       (manifest.quantization ? "INT4 full-window" : "FP32 full-window");
     status("Model loaded locally. Window " + manifest.window + " bytes; " + mode +
            ". Conversation quality depends on your actual checkpoint.");
@@ -179,7 +206,7 @@ function argmax(values) {
 
 async function runByteStep(tokens) {
   const window = state.manifest.window;
-  if (state.manifest.schema_version === 2 &&
+  if (isCachedManifest(state.manifest) &&
       state.cache && state.cacheLength < window) {
     const feeds = {
       token_ids: new ort.Tensor("int64", BigInt64Array.of(BigInt(tokens.at(-1))), [1, 1]),
@@ -208,7 +235,7 @@ async function runByteStep(tokens) {
       BigInt64Array.of(BigInt(context.length - 1)), [1]),
   };
   const outputs = await state.session.run(feeds);
-  if (state.manifest.schema_version === 2) {
+  if (isCachedManifest(state.manifest)) {
     state.cache = {};
     for (const key of cacheTensorNames(state.manifest.n_layers)) {
       state.cache[key] = outputs[key];
@@ -226,12 +253,13 @@ function displayBenchmark(samples, warmups, tokens, seconds) {
   const report = {
     schema_version: 1,
     kind: "aetherion-mobile-synthetic-on-device-benchmark",
-    inference_format: state.manifest.schema_version === 2 ? "fp32_kv_cache" :
+    inference_format: state.manifest.schema_version === 3 ? "int4_kv_cache" :
+      state.manifest.schema_version === 2 ? "fp32_kv_cache" :
       (state.manifest.quantization ? "int4_full_window" : "fp32_full_window"),
     prefill_calls: state.cacheStats.prefill,
     cached_decode_calls: state.cacheStats.decode,
     window_byte_tokens: state.manifest.window,
-    model_sha256: state.manifest.schema_version === 2 ?
+    model_sha256: isCachedManifest(state.manifest) ?
       state.manifest.graphs.prefill.sha256 : state.manifest.onnx_sha256,
     device_ram_gb_reported_by_browser: navigator.deviceMemory ?? null,
     warmup_steps: warmups,
@@ -253,7 +281,7 @@ async function benchmark() {
   setRunning(true);
   $("benchmark-report").textContent = "";
   status("Benchmark: warming up on the current device...");
-  const tokens = Array.from(encoder.encode("Aetherion M18 device test"));
+  const tokens = Array.from(encoder.encode("Hi")); // Short prompt exercises the decode cache on tiny test windows.
   const warmups = 2;
   const steps = 16;
   const timings = [];

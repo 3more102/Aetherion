@@ -27,14 +27,14 @@
   <p>Experimental on-device text generation for Android and iPhone browsers. The model runs on your phone using WebAssembly, not a remote inference server.</p>
   <section>
     <h2>1. Load a checkpoint export</h2>
-    <label for="onnx">M17/M18 model.onnx or M19 prefill.onnx</label>
+    <label for="onnx">M17/M18 model.onnx, M19 prefill.onnx, or M20 prefill.int4.onnx</label>
     <input id="onnx" type="file" accept=".onnx" autocomplete="off">
-    <label for="decode">M19 only: decode.onnx (required for cached mode)</label>
+    <label for="decode">M19/M20 cached models: decode.onnx or decode.int4.onnx</label>
     <input id="decode" type="file" accept=".onnx" autocomplete="off">
     <label for="manifest">manifest.json</label>
     <input id="manifest" type="file" accept=".json" autocomplete="off">
     <button id="load" type="button">Verify &amp; load model</button>
-    <p class="muted">Files stay on your device. M19 requires prefill.onnx, decode.onnx, and manifest.json. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
+    <p class="muted">Files stay on your device. Cached mode requires a matching prefill and decode ONNX pair plus manifest.json. M20 INT4 uses prefill.int4.onnx and decode.int4.onnx. SHA-256 validation rejects mismatched files. The first app install requires the local runtime files.</p>
   </section>
   <section>
     <h2>2. Generate locally</h2>
@@ -49,6 +49,7 @@
     <h3>Output</h3>
     <div id="output" aria-live="off"></div>
     <h3>Local device benchmark</h3>
+    <p class="muted">Run this benchmark separately with FP32 and INT4 exports of the same checkpoint, on the same phone. It measures byte tokens, not BPE tokens; no speedup is assumed.</p>
     <pre id="benchmark-report" aria-label="Mobile benchmark JSON report"></pre>
   </section>
   <p class="muted">Research preview: Aetherion does not currently ship a validated conversational model. Random or minimally trained checkpoints may produce meaningless characters. INT4 exports may differ numerically from FP32. Runs only on modern WebAssembly-compatible phones with adequate memory.</p>

@@ -8,6 +8,7 @@ import torch
 from aetherion.mobile_export import export_mobile_checkpoint
 from aetherion.mobile_quantization import quantize_mobile_int4
 from aetherion.mobile_cached import export_mobile_cached
+from aetherion.mobile_cached_quantization import quantize_mobile_cached_int4
 from aetherion.model import Aetherion, ModelConfig
 
 
@@ -26,8 +27,10 @@ def main() -> None:
         fp32_dir / "model.onnx", fp32_dir / "manifest.json", int4_dir
     )
     export_mobile_cached(checkpoint, dest / "cached", window=8)
+    cached_quantized = quantize_mobile_cached_int4(dest / "cached", dest / "cached_int4")
     print("M18 SYNTHETIC FIXTURE ONLY:", report["quantization"])
     print("M19 SYNTHETIC KV-CACHE FIXTURE ONLY: 8-byte context")
+    print("M20 SYNTHETIC INT4 KV-CACHE ONLY:", cached_quantized["quantization"])
 
 
 if __name__ == "__main__":

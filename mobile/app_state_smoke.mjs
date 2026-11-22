@@ -51,6 +51,29 @@ const v1 = {
 };
 assert.equal(validateManifest(v1).schema_version, 1);
 
+const m20 = {
+  ...m19, schema_version: 3,
+  graphs: {
+    prefill: { filename: "prefill.int4.onnx", sha256: sha },
+    decode: { filename: "decode.int4.onnx", sha256: sha },
+  },
+  source_graphs: m19.graphs,
+  quantization: {
+    type: "weight_only_symmetric_int4",
+    format: "MatMulNBits",
+    block_size: 32,
+    kv_cache_dtype: "float32",
+    converted_matmul_nodes: { prefill: 9, decode: 9 },
+  },
+};
+assert.equal(validateManifest(m20).schema_version, 3);
+assert.throws(() => validateManifest({ ...m20, quantization: undefined }));
+assert.throws(() => validateManifest({ ...m20, quantization: { ...m20.quantization, block_size: 17 } }));
+assert.throws(() => validateManifest({ ...m20, graphs: m19.graphs }));
+assert.throws(() => validateManifest({ ...m20, source_graphs: undefined }));
+assert.throws(() => validateManifest({ ...m19, quantization: m20.quantization }));
+
+
 const state = new Script("state").runInContext(context);
 let firstCalls = 0, decodedCalls = 0;
 const logits = (token) => {
@@ -65,7 +88,7 @@ state.session = { async run(feeds) {
 }};
 state.decodeSession = { async run(feeds) {
   decodedCalls++;
-  assert.equal(Number(feeds.past_length.data[0]), decodedCalls);
+  assert.equal(Number(feeds.past_length.data[0]), state.cacheLength);
   assert.ok(feeds.past_key_0 && feeds.past_value_0);
   return { next_logits: logits(71), key_0: { data: 44 }, value_0: { data: 45 } };
 }};
@@ -90,4 +113,10 @@ const v1step = await context.runByteStep([65]);
 assert.equal(v1step, 70);
 assert.equal(state.cache, null);
 assert.equal(firstCalls, 3);
-console.log("M19 browser cache policy and M17/M18 fallback smoke OK");
+state.manifest = m20;
+context.resetCache();
+const m20seq = [65];
+for (let i = 0; i < 5; i++) m20seq.push(await context.runByteStep(m20seq));
+assert.equal(state.cacheStats.prefill, 2);
+assert.equal(state.cacheStats.decode, 3);
+console.log("M20 schema-3 cached state and legacy M17/M18/M19 fallback smoke OK");
