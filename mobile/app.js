@@ -58,9 +58,22 @@ function validateManifest(manifest) {
         !Number.isInteger(manifest.n_layers) || manifest.n_layers < 1 ||
         !Number.isInteger(manifest.n_heads) || manifest.n_heads < 1 ||
         !Number.isInteger(manifest.head_dim) || manifest.head_dim < 2 ||
-        manifest.cache_policy !== "rebuild_relative_rope_at_window_boundary" ||
-        manifest.quantization !== undefined) {
-      throw new Error("Unsupported M19 KV-cache graph contract.");
+        manifest.cache_policy !== "rebuild_relative_rope_at_window_boundary") {
+      throw new Error("Unsupported M19/M20 KV-cache graph contract.");
+    }
+    if (manifest.quantization !== undefined &&
+        (!manifest.quantization ||
+         manifest.quantization.type !== "weight_only_symmetric_int4" ||
+         manifest.quantization.format !== "MatMulNBits" ||
+         manifest.quantization.cache_dtype !== "float32" ||
+         !Number.isInteger(manifest.quantization.prefill_quantized_matmul_nodes) ||
+         manifest.quantization.prefill_quantized_matmul_nodes < 1 ||
+         !Number.isInteger(manifest.quantization.decode_quantized_matmul_nodes) ||
+         manifest.quantization.decode_quantized_matmul_nodes < 1 ||
+         !isSha256(manifest.graphs.prefill.source_sha256) ||
+         !isSha256(manifest.graphs.decode.source_sha256))) {
+      throw new Error("Unsupported M20 INT4 KV-cache manifest.");
+    }
     }
   } else if (manifest.schema_version === 1) {
     if (!isSha256(manifest.onnx_sha256)) {
@@ -153,7 +166,8 @@ async function loadModel() {
     state.session = prefillSession;
     state.decodeSession = decodeSession;
     state.manifest = manifest;
-    const mode = manifest.schema_version === 2 ? "FP32 + KV cache" :
+    const mode = manifest.schema_version === 2 ?
+      (manifest.quantization ? "INT4 + FP32 KV cache" : "FP32 + KV cache") :
       (manifest.quantization ? "INT4 full-window" : "FP32 full-window");
     status("Model loaded locally. Window " + manifest.window + " bytes; " + mode +
            ". Conversation quality depends on your actual checkpoint.");
@@ -226,7 +240,8 @@ function displayBenchmark(samples, warmups, tokens, seconds) {
   const report = {
     schema_version: 1,
     kind: "aetherion-mobile-synthetic-on-device-benchmark",
-    inference_format: state.manifest.schema_version === 2 ? "fp32_kv_cache" :
+    inference_format: state.manifest.schema_version === 2 ?
+      (state.manifest.quantization ? "int4_kv_cache" : "fp32_kv_cache") :
       (state.manifest.quantization ? "int4_full_window" : "fp32_full_window"),
     prefill_calls: state.cacheStats.prefill,
     cached_decode_calls: state.cacheStats.decode,
@@ -234,6 +249,10 @@ function displayBenchmark(samples, warmups, tokens, seconds) {
     model_sha256: state.manifest.schema_version === 2 ?
       state.manifest.graphs.prefill.sha256 : state.manifest.onnx_sha256,
     device_ram_gb_reported_by_browser: navigator.deviceMemory ?? null,
+    estimated_kv_cache_bytes: state.manifest.schema_version === 2 ?
+      2 * state.manifest.n_layers * state.manifest.n_heads *
+        state.manifest.window * state.manifest.head_dim * 4 : 0,
+    browser_heap_used_bytes_if_available: performance.memory?.usedJSHeapSize ?? null,
     warmup_steps: warmups,
     measured_steps: tokens,
     elapsed_seconds: Number(seconds.toFixed(4)),
@@ -253,7 +272,9 @@ async function benchmark() {
   setRunning(true);
   $("benchmark-report").textContent = "";
   status("Benchmark: warming up on the current device...");
-  const tokens = Array.from(encoder.encode("Aetherion M18 device test"));
+  // Start with one byte, so M19/M20 cache decode is actually exercised.
+  // A long prompt would fill a small test window and force prefill every step.
+  const tokens = [65];
   const warmups = 2;
   const steps = 16;
   const timings = [];
