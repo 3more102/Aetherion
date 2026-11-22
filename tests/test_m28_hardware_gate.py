@@ -1,5 +1,4 @@
 """M28: synthetic hardware benchmark acceptance tests; no GPU required."""
-import copy
 import json
 import math
 import sys
@@ -77,7 +76,7 @@ def test_exact_match_records_evidence_and_no_fake_memory_claim(report_path):
     ({"measured_updates": 2}, "measured"),
     ({"tokens": 3}, "token"),
     ({"seconds": 0.0}, "seconds"),
-    ({"seconds": float("inf")}, "seconds"),
+    ({"seconds": float("inf")}, "non-finite"),
     ({"tokens_per_second": 1000}, "tokens/second"),
     ({"last_loss": float("nan")}, "non-finite"),
     ({"hardware": ""}, "hardware"),
