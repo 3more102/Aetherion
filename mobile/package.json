@@ -1,0 +1,13 @@
+{
+  "name": "aetherion-mobile-browser",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Locally staged WebAssembly runtime for the Aetherion mobile experiment",
+  "scripts": {
+    "stage-runtime": "node install-runtime.mjs",
+    "check": "node --check app.js && node --check sw.js && node --check install-runtime.mjs"
+  },
+  "dependencies": {
+    "onnxruntime-web": "1.31.1"
+  }
+}
