@@ -8,6 +8,7 @@ import sys
 from aetherion.corpus_gate import audit_corpus, require_review
 from aetherion.contamination import require_no_cross_split_findings
 from aetherion.hardware_gate import validate_pilot_benchmark
+from aetherion.live_device_gate import check_live_accelerator
 from aetherion.presets import get_preset
 from aetherion.tokenizer_runtime import load_verified_tokenizer
 
@@ -91,7 +92,16 @@ def main():
             p.error(str(exc))
     cmd = pilot_command(args)
     if args.execute:
-        print(json.dumps({"hardware_preflight": hardware_report}, indent=2), flush=True)
+        # Live identity and free-memory snapshot must be checked immediately
+        # before launching training, after corpus and benchmark preflights.
+        try:
+            live_report = check_live_accelerator(hardware_report, device=args.device)
+        except (ValueError, OSError, RuntimeError) as exc:
+            p.error(str(exc))
+        print(json.dumps({
+            "hardware_preflight": hardware_report,
+            "live_accelerator_preflight": live_report,
+        }, indent=2), flush=True)
         subprocess.run(cmd, check=True)
     else:
         print(json.dumps({"executed": False, "command": cmd}, indent=2))
