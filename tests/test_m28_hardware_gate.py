@@ -119,6 +119,8 @@ def test_pilot_execute_requires_report_before_any_training(monkeypatch, tmp_path
     monkeypatch.setattr(pilot_train, "check_live_accelerator",
                         lambda *args, **kwargs: called.append("live_gate") or
                         {"result": "synthetic_test_only"})
+    monkeypatch.setattr(pilot_train, "verify_pilot_completion",
+                        lambda **kwargs: {"result": "synthetic_test_only"})
     root_args = [
         "pilot_train.py", "--data-dir", "dummy", "--tokenizer", "dummy",
         "--review", "dummy", "--allow-license", "CC0-1.0", "--steps", "2",
