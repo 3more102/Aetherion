@@ -9,9 +9,9 @@ earliest candidate for an exact tie.
 ## Verify without loading checkpoints or running inference
 
 Retain the original M32 report, all candidate checkpoints in the same order,
-and the original \`train.txt\`, \`validation.txt\` and \`test.txt\` files.
+and the original `train.txt`, `validation.txt` and `test.txt` files.
 
-\`\`\`bash
+```bash
 python verify_selected_test_report.py \
   --report reports/selected-test.json \
   --data-dir data/processed/v1 \
@@ -19,7 +19,7 @@ python verify_selected_test_report.py \
   --checkpoint checkpoints/run-step00000002.pt \
   --checkpoint checkpoints/run-step00000003.pt \
   --output reports/selected-test-integrity.json
-\`\`\`
+```
 
 The verifier checks:
 
@@ -55,10 +55,10 @@ commitment: preserve the v1 report and disclose its audit limitation.
 
 ## Regression verification
 
-\`\`\`bash
+```bash
 python -m pytest -q tests/test_m33_offline_audit.py
 python -m pytest -q
-\`\`\`
+```
 
 Synthetic fixtures exercise valid reports, selection tampering, arithmetic
 inconsistencies, modified data/checkpoints, duplicate JSON keys, report size,
