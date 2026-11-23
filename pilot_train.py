@@ -9,6 +9,7 @@ from aetherion.corpus_gate import audit_corpus, require_review
 from aetherion.contamination import require_no_cross_split_findings
 from aetherion.hardware_gate import validate_pilot_benchmark
 from aetherion.live_device_gate import check_live_accelerator
+from aetherion.pilot_budget import check_pilot_budget
 from aetherion.presets import get_preset
 from aetherion.tokenizer_runtime import load_verified_tokenizer
 
@@ -75,10 +76,29 @@ def main():
     p.add_argument("--benchmark-report", help="Local exact-configuration 125M accelerator benchmark JSON")
     p.add_argument("--max-peak-reserved-gib", type=float,
                    help="Explicit upper bound on measured accelerator peak reserved GiB")
+    p.add_argument("--max-total-tokens", type=int,
+                   help="Required for execution: upper bound on sampled target token positions")
+    p.add_argument("--max-checkpoint-writes", type=int,
+                   help="Required for execution: upper bound on planned checkpoint write operations")
     p.add_argument("--execute", action="store_true", help="Explicitly start training; default only prints plan")
     args = p.parse_args()
     hardware_report = None
+    work_budget = None
     if args.execute:
+        if args.max_total_tokens is None or args.max_checkpoint_writes is None:
+            p.error("--execute requires --max-total-tokens and --max-checkpoint-writes")
+        try:
+            work_budget = check_pilot_budget(
+                steps=args.steps, context=args.context, batch_size=args.batch_size,
+                accumulation=args.accumulation, schedule_steps=args.schedule_steps,
+                save_every=args.save_every,
+                retain_step_checkpoints=args.retain_step_checkpoints,
+                max_total_tokens=args.max_total_tokens,
+                max_checkpoint_writes=args.max_checkpoint_writes,
+                resume=bool(args.resume),
+            )
+        except ValueError as exc:
+            p.error(str(exc))
         if not args.benchmark_report or args.max_peak_reserved_gib is None:
             p.error("--execute requires --benchmark-report and --max-peak-reserved-gib")
         try:
@@ -101,6 +121,7 @@ def main():
         print(json.dumps({
             "hardware_preflight": hardware_report,
             "live_accelerator_preflight": live_report,
+            "work_budget_preflight": work_budget,
         }, indent=2), flush=True)
         subprocess.run(cmd, check=True)
     else:

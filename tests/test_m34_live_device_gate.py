@@ -115,6 +115,7 @@ def test_execution_aborts_before_subprocess_on_live_gate_failure(monkeypatch):
         "--steps", "2", "--schedule-steps", "4", "--output", "synthetic.pt",
         "--device", "cuda:0", "--benchmark-report", "synthetic.json",
         "--max-peak-reserved-gib", "12", "--execute",
+        "--max-total-tokens", "8192", "--max-checkpoint-writes", "2",
     ])
     with pytest.raises(SystemExit) as exc:
         pilot_train.main()

@@ -64,6 +64,7 @@ Repeat the same pilot command with:
 ```sh
   --benchmark-report reports/125m-cuda0-bench.json \
   --max-peak-reserved-gib 12 \
+  --max-total-tokens 20480 --max-checkpoint-writes 1 \
   --execute
 ```
 
@@ -103,9 +104,10 @@ passing test.
 A small synthetic benchmark is not representative of a longer training run,
 different data-loader memory pressure, thermal throttling, fragmentation,
 future model changes, or multiple GPUs. Even a valid report is not a peak
-system-RAM guarantee. The preflight does not validate the actual identity of
-the GPU at execution time. Hardware operators must cross-check reported
-device information, the current GPU, available resources and report age.
+system-RAM guarantee. M34 additionally checks the indexed device name and point-in-time free
+accelerator memory immediately before execution, but device availability,
+shared resource use and report age can still change. Hardware operators must
+independently cross-check reported hardware and current resources.
 
 Data rights, privacy, held-out contamination, seed reproducibility,
 checkpoint evaluation and useful assistant behavior must be independently
