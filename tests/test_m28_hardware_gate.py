@@ -125,6 +125,7 @@ def test_pilot_execute_requires_report_before_any_training(monkeypatch, tmp_path
         "--schedule-steps", "4", "--context", "256", "--batch-size", "1",
         "--accumulation", "4", "--device", "cuda:0", "--precision", "bf16",
         "--output", "never-created.pt", "--execute",
+        "--max-total-tokens", "8192", "--max-checkpoint-writes", "2",
     ]
     monkeypatch.setattr(sys, "argv", root_args)
     with pytest.raises(SystemExit) as exc:
