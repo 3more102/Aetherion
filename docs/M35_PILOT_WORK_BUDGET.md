@@ -58,7 +58,8 @@ python pilot_train.py --data-dir data/processed/v1 \
   --precision bf16 --output checkpoints/pilot.pt \
   --benchmark-report reports/125m-cuda0.json \
   --max-peak-reserved-gib 12 --max-total-tokens 20480 \
-  --max-checkpoint-writes 1 --execute
+  --max-checkpoint-writes 1 \\
+  --min-free-checkpoint-gib 2 --execute
 ```
 
 For this illustrative run, `20 × 1 × 4 × 256 = 20,480`
