@@ -161,7 +161,18 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
 
-## M34: Live accelerator preflight before approved 125M execution
+## M35: Explicit training token and checkpoint work budgets
+
+Before a real 125M pilot can use `--execute`, the launcher now requires
+operator limits on the **sampled training token positions** and number of
+**checkpoint write operations**. The preflight calculates planned positions
+as `steps × batch_size × accumulation × context`, counting repeat samples,
+and estimates final/periodic save operations before any benchmark or corpus
+preflight. Runs exceeding either limit fail before training starts. These
+limits are not a measured GPU-time, disk, financial or training-quality
+budget. See [M35 work-budget guide](docs/M35_PILOT_WORK_BUDGET.md).
+
+
 
 Before the guarded 125M pilot uses `--execute`, the M34 gate now checks
 that the accelerator named in its validated M28 benchmark is still present
