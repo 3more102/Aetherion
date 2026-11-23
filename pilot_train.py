@@ -11,6 +11,8 @@ from aetherion.checkpoint_destination import check_checkpoint_destination
 from aetherion.hardware_gate import validate_pilot_benchmark
 from aetherion.live_device_gate import check_live_accelerator
 from aetherion.pilot_lock import pilot_execution_lock
+from aetherion.pilot_completion import (verify_pilot_completion, write_completion_receipt,
+                                       final_checkpoint_path)
 from aetherion.pilot_budget import check_pilot_budget
 from aetherion.presets import get_preset
 from aetherion.tokenizer_runtime import load_verified_tokenizer
@@ -86,6 +88,7 @@ def main():
                    help="Required for execution: operator-declared minimum current free checkpoint disk GiB")
     p.add_argument("--allow-overwrite-output", action="store_true",
                    help="Explicitly permit replacement of a non-retained checkpoint (unsafe; opt in)")
+    p.add_argument("--completion-report", help="Optional create-only JSON receipt for verified final checkpoint")
     p.add_argument("--execute", action="store_true", help="Explicitly start training; default only prints plan")
     args = p.parse_args()
     hardware_report = None
@@ -136,6 +139,13 @@ def main():
                     min_free_gib=args.min_free_checkpoint_gib,
                     allow_overwrite_output=args.allow_overwrite_output,
                 )
+                if args.completion_report:
+                    receipt_path = Path(args.completion_report)
+                    planned_final = final_checkpoint_path(
+                        args.output, steps=args.steps, retained=args.retain_step_checkpoints)
+                    if (receipt_path.is_symlink() or receipt_path.exists()
+                            or receipt_path.resolve() == planned_final.resolve()):
+                        raise ValueError("Completion report path already exists or conflicts with final checkpoint")
                 print(json.dumps({
                     "checkpoint_storage_preflight": storage_report,
                     "exclusive_pilot_lock": lock_report,
@@ -144,6 +154,19 @@ def main():
                     "work_budget_preflight": work_budget,
                 }, indent=2), flush=True)
                 subprocess.run(cmd, check=True)
+                # A successful child process alone is not evidence of a usable checkpoint.
+                expected_cfg = get_preset("125m")
+                expected_cfg.block_size = args.context
+                receipt = verify_pilot_completion(
+                    output=args.output, steps=args.steps, retained=args.retain_step_checkpoints,
+                    cfg=expected_cfg, data_dir=args.data_dir, tokenizer_path=args.tokenizer,
+                    batch_size=args.batch_size, accumulation=args.accumulation,
+                    schedule_steps=args.schedule_steps, warmup_steps=args.warmup_steps,
+                    precision=args.precision, device=args.device,
+                )
+                if args.completion_report:
+                    write_completion_receipt(receipt, args.completion_report)
+                print(json.dumps({"post_training_checkpoint_receipt": receipt}, indent=2), flush=True)
         except (ValueError, OSError) as exc:
             p.error(str(exc))
     else:

@@ -161,6 +161,18 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
 
+## M38: Verify final checkpoint before declaring a pilot complete
+
+After a guarded 125M trainer exits, the launcher now requires a matching
+format-v2 **final checkpoint** with verified training-step, model tensor
+shapes, optimizer and RNG records, and data/tokenizer checksums. The SHA-256
+receipt is printed after successful verification, and
+`--completion-report reports/receipt.json` optionally saves a create-only
+JSON file. A zero exit code alone no longer claims completion. This does
+**not** establish genuine optimization, useful assistant weights, licensed
+data or hardware/device performance. See
+[M38 final checkpoint receipt](docs/M38_FINAL_CHECKPOINT_RECEIPT.md).
+
 ## M37: Exclusive guarded pilot run lock
 
 The 125M `pilot_train.py --execute` launcher now creates an exclusive
