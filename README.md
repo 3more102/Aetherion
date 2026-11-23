@@ -161,6 +161,17 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
 
+## M34: Live accelerator preflight before approved 125M execution
+
+Before the guarded 125M pilot uses `--execute`, the M34 gate now checks
+that the accelerator named in its validated M28 benchmark is still present
+at the requested CUDA/XPU index, and that current free device memory is at
+least 1.25× the benchmark's sampled synthetic peak reserved memory.
+Uninspectable hardware or inadequate memory blocks the training launch.
+Dry runs remain GPU-free. **This is not an authenticated device benchmark,
+a memory guarantee or evidence of pretrained weights.** See
+[M34 live accelerator preflight](docs/M34_LIVE_ACCELERATOR_PREFLIGHT.md).
+
 ## M33: Offline selected-test integrity audit
 
 M32 now emits schema-v2 selected-test evidence recording **every validation
