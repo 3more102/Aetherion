@@ -46,7 +46,8 @@ python pilot_train.py --data-dir data/processed/v1 \
   --device cuda:0 --precision bf16 --output checkpoints/pilot.pt \
   --benchmark-report reports/125m-cuda0.json \
   --max-peak-reserved-gib 12 \
-  --max-total-tokens 20480 --max-checkpoint-writes 1 --execute
+  --max-total-tokens 20480 --max-checkpoint-writes 1 \\
+  --min-free-checkpoint-gib 2 --execute
 ```
 
 Paths and the 12 GiB ceiling are examples only. They are **not** a
