@@ -130,7 +130,7 @@ def test_validation_rejects_malformed_lineage(snapshot_run, tmp_path):
 
 
 def test_lineage_cli_accepts_rooted_chain_and_rejects_missing_snapshots(snapshot_run, tmp_path):
-    folder, snapshots, _ = snapshot_run
+    folder, snapshots, run = snapshot_run
     cmd = [sys.executable, "audit_training_history.py", "--demo",
            "--data-dir", str(folder), "--stride", "4",
            "--require-lineage"]
@@ -138,6 +138,18 @@ def test_lineage_cli_accepts_rooted_chain_and_rejects_missing_snapshots(snapshot
         cmd += ["--checkpoint", str(path)]
     completed = subprocess.run(cmd, capture_output=True, text=True, check=True)
     assert json.loads(completed.stdout)["lineage_check"] == "validated"
-    failed = subprocess.run(cmd[:-2] + ["--checkpoint", str(snapshots[0])],
+
+    # A root-to-tip audit cannot skip the intermediate saved checkpoint.
+    third = run(steps=3, resume=snapshots[1])[-1]
+    failed = subprocess.run(cmd[:-2] + ["--checkpoint", str(third)],
                             capture_output=True, text=True)
     assert failed.returncode != 0
+    assert "broken parent" in failed.stderr
+
+
+def test_lineage_shape_validation_rejects_unknown_fields():
+    lineage = {"version": 1, "run_id": "a" * 32,
+               "parent_sha256": None, "parent_step": None}
+    assert validate_lineage(lineage, step=1) == lineage
+    with pytest.raises(ValueError, match="lineage fields"):
+        validate_lineage({**lineage, "claimed_verified": True}, step=1)
