@@ -10,6 +10,7 @@ from aetherion.contamination import require_no_cross_split_findings
 from aetherion.checkpoint_destination import check_checkpoint_destination
 from aetherion.hardware_gate import validate_pilot_benchmark
 from aetherion.live_device_gate import check_live_accelerator
+from aetherion.pilot_lock import pilot_execution_lock
 from aetherion.pilot_budget import check_pilot_budget
 from aetherion.presets import get_preset
 from aetherion.tokenizer_runtime import load_verified_tokenizer
@@ -125,22 +126,26 @@ def main():
             live_report = check_live_accelerator(hardware_report, device=args.device)
         except (ValueError, OSError, RuntimeError) as exc:
             p.error(str(exc))
+        # M37: serialize cooperative guarded launchers for this exact output.
+        # Hold the lock from the last storage preflight through child exit.
         try:
-            storage_report = check_checkpoint_destination(
-                args.output, steps=args.steps, save_every=args.save_every,
-                retain_step_checkpoints=args.retain_step_checkpoints,
-                min_free_gib=args.min_free_checkpoint_gib,
-                allow_overwrite_output=args.allow_overwrite_output,
-            )
+            with pilot_execution_lock(args.output) as lock_report:
+                storage_report = check_checkpoint_destination(
+                    args.output, steps=args.steps, save_every=args.save_every,
+                    retain_step_checkpoints=args.retain_step_checkpoints,
+                    min_free_gib=args.min_free_checkpoint_gib,
+                    allow_overwrite_output=args.allow_overwrite_output,
+                )
+                print(json.dumps({
+                    "checkpoint_storage_preflight": storage_report,
+                    "exclusive_pilot_lock": lock_report,
+                    "hardware_preflight": hardware_report,
+                    "live_accelerator_preflight": live_report,
+                    "work_budget_preflight": work_budget,
+                }, indent=2), flush=True)
+                subprocess.run(cmd, check=True)
         except (ValueError, OSError) as exc:
             p.error(str(exc))
-        print(json.dumps({
-            "checkpoint_storage_preflight": storage_report,
-            "hardware_preflight": hardware_report,
-            "live_accelerator_preflight": live_report,
-            "work_budget_preflight": work_budget,
-        }, indent=2), flush=True)
-        subprocess.run(cmd, check=True)
     else:
         print(json.dumps({"executed": False, "command": cmd}, indent=2))
 
