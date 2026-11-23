@@ -92,3 +92,31 @@ def test_mismatched_device_or_peak_rejected():
     altered["sampled_peak_allocated_bytes"] = 9*GIB
     with pytest.raises(ValueError, match="exceeds live accelerator capacity"):
         check_live_accelerator(altered, device="cuda:0", torch_backend=SimpleNamespace(cuda=FakeGpu()))
+
+
+def test_execution_aborts_before_subprocess_on_live_gate_failure(monkeypatch):
+    import pilot_train
+    import sys
+
+    calls = []
+    monkeypatch.setattr(pilot_train, "validate_pilot_benchmark",
+                        lambda *args, **kwargs: {"device": "cuda:0"})
+    monkeypatch.setattr(pilot_train, "pilot_command",
+                        lambda args: calls.append("corpus-gates") or ["train.py"])
+    def refuse_live(*args, **kwargs):
+        calls.append("live-rejected")
+        raise ValueError("Insufficient free accelerator memory")
+    monkeypatch.setattr(pilot_train, "check_live_accelerator", refuse_live)
+    monkeypatch.setattr(pilot_train.subprocess, "run",
+                        lambda *args, **kwargs: calls.append("started-training"))
+    monkeypatch.setattr(sys, "argv", [
+        "pilot_train.py", "--data-dir", "synthetic", "--tokenizer", "synthetic",
+        "--review", "synthetic", "--allow-license", "CC0-1.0",
+        "--steps", "2", "--schedule-steps", "4", "--output", "synthetic.pt",
+        "--device", "cuda:0", "--benchmark-report", "synthetic.json",
+        "--max-peak-reserved-gib", "12", "--execute",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        pilot_train.main()
+    assert exc.value.code == 2
+    assert calls == ["corpus-gates", "live-rejected"]
