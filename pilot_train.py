@@ -7,6 +7,7 @@ import sys
 
 from aetherion.corpus_gate import audit_corpus, require_review
 from aetherion.contamination import require_no_cross_split_findings
+from aetherion.checkpoint_destination import check_checkpoint_destination
 from aetherion.hardware_gate import validate_pilot_benchmark
 from aetherion.live_device_gate import check_live_accelerator
 from aetherion.pilot_budget import check_pilot_budget
@@ -80,6 +81,10 @@ def main():
                    help="Required for execution: upper bound on sampled target token positions")
     p.add_argument("--max-checkpoint-writes", type=int,
                    help="Required for execution: upper bound on planned checkpoint write operations")
+    p.add_argument("--min-free-checkpoint-gib", type=float,
+                   help="Required for execution: operator-declared minimum current free checkpoint disk GiB")
+    p.add_argument("--allow-overwrite-output", action="store_true",
+                   help="Explicitly permit replacement of a non-retained checkpoint (unsafe; opt in)")
     p.add_argument("--execute", action="store_true", help="Explicitly start training; default only prints plan")
     args = p.parse_args()
     hardware_report = None
@@ -99,6 +104,8 @@ def main():
             )
         except ValueError as exc:
             p.error(str(exc))
+        if args.min_free_checkpoint_gib is None:
+            p.error("--execute requires --min-free-checkpoint-gib")
         if not args.benchmark_report or args.max_peak_reserved_gib is None:
             p.error("--execute requires --benchmark-report and --max-peak-reserved-gib")
         try:
@@ -118,7 +125,17 @@ def main():
             live_report = check_live_accelerator(hardware_report, device=args.device)
         except (ValueError, OSError, RuntimeError) as exc:
             p.error(str(exc))
+        try:
+            storage_report = check_checkpoint_destination(
+                args.output, steps=args.steps, save_every=args.save_every,
+                retain_step_checkpoints=args.retain_step_checkpoints,
+                min_free_gib=args.min_free_checkpoint_gib,
+                allow_overwrite_output=args.allow_overwrite_output,
+            )
+        except (ValueError, OSError) as exc:
+            p.error(str(exc))
         print(json.dumps({
+            "checkpoint_storage_preflight": storage_report,
             "hardware_preflight": hardware_report,
             "live_accelerator_preflight": live_report,
             "work_budget_preflight": work_budget,
