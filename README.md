@@ -161,6 +161,17 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
 
+## M36: Fail-closed checkpoint storage preflight
+
+The guarded 125M training launcher now checks the checkpoint destination
+immediately before execution. It requires an operator-declared
+`--min-free-checkpoint-gib` floor, rejects accidental overwrite of an
+existing checkpoint, and detects scheduled collisions for retained snapshots.
+Replacing an ordinary checkpoint requires deliberate
+`--allow-overwrite-output`. These are point-in-time checks, **not** a disk
+reservation, proof of sufficient storage, or evidence of trained 125M weights.
+See [M36 checkpoint storage guide](docs/M36_CHECKPOINT_STORAGE_PREFLIGHT.md).
+
 ## M35: Explicit training token and checkpoint work budgets
 
 Before a real 125M pilot can use `--execute`, the launcher now requires
