@@ -161,6 +161,17 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
 
+## M37: Exclusive guarded pilot run lock
+
+The 125M `pilot_train.py --execute` launcher now creates an exclusive
+per-output lock before the final checkpoint-storage check and holds it until
+training exits. A second cooperating launcher targeting the same output
+fails without starting a second training job. Locks from an interrupted or
+killed process are **never automatically reclaimed**; inspect active jobs
+and checkpoints before manual removal. This is cooperative protection, not
+a filesystem-wide reservation or evidence of actual GPU training. See
+[M37 exclusive pilot lock](docs/M37_EXCLUSIVE_PILOT_LOCK.md).
+
 ## M36: Fail-closed checkpoint storage preflight
 
 The guarded 125M training launcher now checks the checkpoint destination
