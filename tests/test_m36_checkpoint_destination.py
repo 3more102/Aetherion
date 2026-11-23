@@ -91,3 +91,58 @@ def test_disk_usage_error_fails_closed(tmp_path):
         raise OSError("unmounted")
     with pytest.raises(ValueError, match="Cannot read"):
         check(tmp_path, disk_usage=failing)
+
+
+def test_execute_requires_disk_floor_before_hardware_and_corpus(monkeypatch):
+    import sys
+    import pilot_train
+    called = []
+    monkeypatch.setattr(pilot_train, "validate_pilot_benchmark",
+                        lambda *a, **kw: called.append("benchmark"))
+    monkeypatch.setattr(pilot_train, "pilot_command",
+                        lambda *a, **kw: called.append("corpus"))
+    monkeypatch.setattr(pilot_train.subprocess, "run",
+                        lambda *a, **kw: called.append("train"))
+    monkeypatch.setattr(sys, "argv", [
+        "pilot_train.py", "--data-dir", "fixture", "--tokenizer", "fixture",
+        "--review", "fixture", "--allow-license", "CC0-1.0",
+        "--steps", "2", "--schedule-steps", "4",
+        "--max-total-tokens", "8192", "--max-checkpoint-writes", "2",
+        "--device", "cuda:0", "--output", "fixture.pt", "--execute",
+        "--benchmark-report", "fixture.json", "--max-peak-reserved-gib", "12",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        pilot_train.main()
+    assert exc.value.code == 2
+    assert called == []
+
+
+def test_execute_disk_gate_blocks_training_after_other_gates(monkeypatch):
+    import sys
+    import pilot_train
+    called = []
+    monkeypatch.setattr(pilot_train, "validate_pilot_benchmark",
+                        lambda *a, **kw: {"device": "cuda:0"})
+    monkeypatch.setattr(pilot_train, "pilot_command",
+                        lambda *a, **kw: called.append("corpus") or ["train.py"])
+    monkeypatch.setattr(pilot_train, "check_live_accelerator",
+                        lambda *a, **kw: called.append("live") or {"result": "test"})
+    def fail_storage(*a, **kw):
+        called.append("storage")
+        raise ValueError("Insufficient free checkpoint disk space")
+    monkeypatch.setattr(pilot_train, "check_checkpoint_destination", fail_storage)
+    monkeypatch.setattr(pilot_train.subprocess, "run",
+                        lambda *a, **kw: called.append("train"))
+    monkeypatch.setattr(sys, "argv", [
+        "pilot_train.py", "--data-dir", "fixture", "--tokenizer", "fixture",
+        "--review", "fixture", "--allow-license", "CC0-1.0",
+        "--steps", "2", "--schedule-steps", "4",
+        "--max-total-tokens", "8192", "--max-checkpoint-writes", "2",
+        "--min-free-checkpoint-gib", "2",
+        "--device", "cuda:0", "--output", "fixture.pt", "--execute",
+        "--benchmark-report", "fixture.json", "--max-peak-reserved-gib", "12",
+    ])
+    with pytest.raises(SystemExit) as exc:
+        pilot_train.main()
+    assert exc.value.code == 2
+    assert called == ["corpus", "live", "storage"]
