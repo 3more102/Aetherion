@@ -64,6 +64,7 @@ Repeat the same pilot command with:
 ```sh
   --benchmark-report reports/125m-cuda0-bench.json \
   --max-peak-reserved-gib 12 \
+  --max-total-tokens 20480 --max-checkpoint-writes 1 \
   --execute
 ```
 
