@@ -160,6 +160,17 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M31: Opt-in SHA-linked checkpoint history
+
+Retained snapshots now include a random run identifier and the SHA-256 digest
+and step of the previous saved checkpoint. Resuming a linked snapshot extends
+that record. With `audit_training_history.py --require-lineage`, the auditor
+requires the full root-to-tip chain and rejects missing, altered or unrelated
+snapshots before accepting a linked held-out history. Legacy checkpoints and
+the default audit mode remain supported. Hash links do **not** authenticate the
+trainer or prove uninterrupted optimizer updates; they can be forged by anyone
+who controls the files. See the [M31 lineage guide](docs/M31_CHECKPOINT_LINEAGE.md).
+
 ## M30: Retained checkpoints and validation progression
 
 Training now supports the opt-in `--retain-step-checkpoints` flag to
