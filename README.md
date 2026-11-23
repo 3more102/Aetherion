@@ -160,6 +160,19 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+## M32: Validation-selected, independently pinned test evaluation
+
+The new `assess_selected_test.py` re-evaluates retained checkpoints on the
+same held-out validation split and selects the **minimum validation NLL**
+checkpoint. It then evaluates only that selected checkpoint on a separate
+`test.txt` using exact target accounting and checksum checks. Demo runs
+require an operator-pinned test SHA-256; real 125M evidence uses the reviewed
+prepared test manifest and M27–M31 gates. An opt-in `--require-lineage` also
+checks the entire M31 save chain. Results are create-only JSON, not proof of
+conversational ability or a trained 125M model. Repeated use of the test set
+for tuning defeats the intended holdout separation. See
+[M32 selected test evaluation](docs/M32_SELECTED_TEST_EVALUATION.md).
+
 ## M31: Opt-in SHA-linked checkpoint history
 
 Retained snapshots now include a random run identifier and the SHA-256 digest
