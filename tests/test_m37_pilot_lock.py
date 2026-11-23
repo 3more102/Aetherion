@@ -83,6 +83,8 @@ def configured_pilot(monkeypatch, tmp_path, calls, *, fail_subprocess=False):
                         lambda *a, **kw: calls.append("live") or {"kind": "synthetic_test"})
     monkeypatch.setattr(pilot_train, "check_checkpoint_destination",
                         lambda *a, **kw: calls.append("storage") or {"kind": "synthetic_test"})
+    monkeypatch.setattr(pilot_train, "verify_pilot_completion",
+                        lambda **kw: {"result": "synthetic_test_only"})
 
     def run_mock(*args, **kw):
         calls.append("training")
