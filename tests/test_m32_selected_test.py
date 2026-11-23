@@ -54,6 +54,14 @@ def test_select_by_validation_not_test_and_evaluate_exact_targets(m32_demo):
                           stride=4, require_lineage=True)
     winner = min(audit["history"], key=lambda e: e["mean_nll"])
     assert report["selection"]["candidate_count"] == 3
+    assert report["schema_version"] == 2
+    candidates = report["selection"]["candidates"]
+    assert [item["step"] for item in candidates] == [1, 2, 3]
+    assert [(item["checkpoint_sha256"], item["mean_nll"], item["evaluated_targets"])
+            for item in candidates] == [
+                (item["checkpoint_sha256"], item["mean_nll"], item["evaluated_targets"])
+                for item in audit["history"]
+            ]
     assert report["selection"]["selected_step"] == winner["step"]
     assert report["selection"]["selected_checkpoint_sha256"] == winner["checkpoint_sha256"]
     assert report["selection"]["selected_validation_mean_nll"] == winner["mean_nll"]
