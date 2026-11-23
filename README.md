@@ -166,7 +166,7 @@ Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or suppl
 M32 now emits schema-v2 selected-test evidence recording **every validation
 candidate** (checkpoint SHA-256, step, validation NLL/perplexity, target count)
 as well as the validation-selected winner. The new
-\`verify_selected_test_report.py\` checks input file hashes, the first-tie
+`verify_selected_test_report.py` checks input file hashes, the first-tie
 minimum-validation-NLL decision and internal test-metric arithmetic without
 loading weights or re-scoring the test split. It can write an exclusive,
 no-overwrite JSON integrity report. This **does not independently verify
