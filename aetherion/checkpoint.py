@@ -5,15 +5,50 @@ loading reduces unsafe deserialization risk but is not a substitute for trust.
 """
 import os
 import tempfile
+from hashlib import sha256
 from pathlib import Path
 
 import torch
 from aetherion.devices import xpu_available
 
 FORMAT_VERSION = 2
+LINEAGE_VERSION = 1
 
 
-def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step, seed, data, hparams, overwrite=True):
+def file_sha256(path):
+    """Hash a checkpoint in bounded memory without loading its tensors."""
+    digest = sha256()
+    with Path(path).open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def validate_lineage(lineage, *, step):
+    """Validate optional per-snapshot metadata; it is not a signed attestation."""
+    if type(step) is not int or step < 1 or type(lineage) is not dict:
+        raise ValueError("Invalid checkpoint lineage")
+    if set(lineage) != {"version", "run_id", "parent_sha256", "parent_step"}:
+        raise ValueError("Invalid checkpoint lineage fields")
+    if type(lineage["version"]) is not int or lineage["version"] != LINEAGE_VERSION:
+        raise ValueError("Unsupported checkpoint lineage version")
+    run_id, digest, parent_step = (
+        lineage["run_id"], lineage["parent_sha256"], lineage["parent_step"]
+    )
+    hexdigits = set("0123456789abcdef")
+    if type(run_id) is not str or len(run_id) != 32 or not set(run_id) <= hexdigits:
+        raise ValueError("Invalid checkpoint lineage run ID")
+    if digest is None:
+        if parent_step is not None:
+            raise ValueError("Root checkpoint cannot have a parent step")
+    elif (type(digest) is not str or len(digest) != 64
+          or not set(digest) <= hexdigits
+          or type(parent_step) is not int or not 1 <= parent_step < step):
+        raise ValueError("Invalid checkpoint lineage parent")
+    return dict(lineage)
+
+
+def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step, seed, data, hparams, overwrite=True, lineage=None):
     """Write checkpoint atomically; opt-in snapshots reject existing paths.
 
     overwrite=False uses a same-filesystem hard link from the fsynced temp
@@ -35,6 +70,8 @@ def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step,
         "cuda_rng_states": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
         "train_generator_state": train_rng.get_state(),
     }
+    if lineage is not None:
+        payload["lineage"] = validate_lineage(lineage, step=step)
     if next(model.parameters()).device.type == "xpu":
         payload["xpu_rng_states"] = torch.xpu.get_rng_state_all()
     fd, temp_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".tmp", dir=target.parent)
@@ -53,7 +90,7 @@ def save_training_checkpoint(path, *, model, optimizer, train_rng, config, step,
             os.unlink(temp_name)
 
 
-def load_training_checkpoint(path, *, model, optimizer, train_rng, config, seed, data, hparams):
+def load_training_checkpoint(path, *, model, optimizer, train_rng, config, seed, data, hparams, lineage_out=None):
     """Restore full training state; refuse incompatible configs, data and old checkpoints."""
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
     if not isinstance(checkpoint, dict) or checkpoint.get("format_version") != FORMAT_VERSION:
@@ -70,8 +107,15 @@ def load_training_checkpoint(path, *, model, optimizer, train_rng, config, seed,
     if any(key not in checkpoint for key in required):
         raise ValueError("Checkpoint is missing optimizer/RNG/step information")
     step = checkpoint["step"]
-    if not isinstance(step, int) or step < 1:
+    if type(step) is not int or step < 1:
         raise ValueError("Invalid checkpoint training step")
+    lineage = checkpoint.get("lineage")
+    if lineage is not None:
+        lineage = validate_lineage(lineage, step=step)
+    if lineage_out is not None:
+        lineage_out.clear()
+        if lineage is not None:
+            lineage_out.update(lineage)
     stored_cuda = checkpoint.get("cuda_rng_states", [])
     if stored_cuda and torch.cuda.is_available() and len(stored_cuda) != torch.cuda.device_count():
         raise ValueError("Cannot resume: CUDA device count differs from checkpoint")

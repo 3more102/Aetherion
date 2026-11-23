@@ -3,10 +3,11 @@ import argparse
 from dataclasses import asdict
 from hashlib import sha256
 from pathlib import Path
+from secrets import token_hex
 
 import torch
 from aetherion import Aetherion, ModelConfig
-from aetherion.checkpoint import load_training_checkpoint, save_training_checkpoint
+from aetherion.checkpoint import file_sha256, load_training_checkpoint, save_training_checkpoint
 from aetherion.training import learning_rate, optimizer_step, precision_context
 
 
@@ -133,14 +134,30 @@ def main():
                        precision=args.precision, device=str(torch.device(device)))
     train_rng = torch.Generator(device="cpu").manual_seed(args.seed + 1)
     start_step = 0
+    resume_lineage = {}
+    # Detect changes to the selected parent artifact while it is being loaded.
+    resume_sha = (file_sha256(args.resume)
+                  if args.resume is not None and args.retain_step_checkpoints else None)
     if args.resume is not None:
         start_step = load_training_checkpoint(
             args.resume, model=model, optimizer=optimizer, train_rng=train_rng,
-            config=asdict(cfg), seed=args.seed, data=hashes, hparams=hparams
+            config=asdict(cfg), seed=args.seed, data=hashes, hparams=hparams,
+            lineage_out=resume_lineage,
         )
         if start_step >= args.steps:
             parser.error(f"--steps must exceed checkpoint step ({start_step}); it is a total step target")
+        if resume_sha is not None and file_sha256(args.resume) != resume_sha:
+            raise ValueError("Resume checkpoint changed during load")
         print(f"resumed_checkpoint={args.resume} from_step={start_step}")
+    if args.retain_step_checkpoints:
+        # A legacy checkpoint is a fresh chain root, not verified ancestry.
+        run_id = resume_lineage["run_id"] if resume_lineage else token_hex(16)
+        parent_sha = resume_sha if resume_lineage else None
+        parent_step = start_step if resume_lineage else None
+        if args.resume and not resume_lineage:
+            print("WARNING: legacy resume starts a new lineage; preceding snapshots are unlinked")
+    else:
+        run_id, parent_sha, parent_step = None, None, None
     print(f"device={device} parameters={sum(p.numel() for p in model.parameters()):,}")
 
     def get_batch(split: torch.Tensor, generator: torch.Generator):
@@ -152,13 +169,19 @@ def main():
     output = Path(args.output)
 
     def save(step: int):
+        nonlocal parent_sha, parent_step
         target = (output.with_name(f"{output.stem}-step{step:08d}{output.suffix}")
                   if args.retain_step_checkpoints else output)
+        lineage = ({"version": 1, "run_id": run_id,
+                    "parent_sha256": parent_sha, "parent_step": parent_step}
+                   if args.retain_step_checkpoints else None)
         save_training_checkpoint(
             target, model=model, optimizer=optimizer, train_rng=train_rng,
             config=asdict(cfg), step=step, seed=args.seed, data=hashes, hparams=hparams,
-            overwrite=not args.retain_step_checkpoints,
+            overwrite=not args.retain_step_checkpoints, lineage=lineage,
         )
+        if args.retain_step_checkpoints:
+            parent_sha, parent_step = file_sha256(target), step
         print(f"saved_checkpoint={target} step={step}")
 
     for step in range(start_step + 1, args.steps + 1):

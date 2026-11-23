@@ -17,6 +17,7 @@ import sys
 import torch
 
 from aetherion import Aetherion, ModelConfig
+from aetherion.checkpoint import validate_lineage
 from aetherion.contamination import require_no_cross_split_findings
 from aetherion.corpus_gate import audit_corpus, require_review
 from aetherion.evaluation import evaluate_tokens
@@ -94,6 +95,9 @@ def assess_checkpoint(
             not isinstance(artifact["config"], dict) or
             not isinstance(artifact["state_dict"], dict)):
         raise ValueError("Checkpoint training metadata has invalid types")
+    lineage = artifact.get("lineage")
+    if lineage is not None:
+        lineage = validate_lineage(lineage, step=artifact["step"])
     cfg = ModelConfig(**artifact["config"])
     if cfg.vocab_size != vocab_size:
         raise ValueError("Checkpoint vocabulary differs from validated tokenizer")
@@ -131,6 +135,7 @@ def assess_checkpoint(
             "model_config": asdict(cfg),
             "parameter_count": sum(p.numel() for p in model.parameters()),
             "training_hyperparameters": hyperparams,
+            **({"lineage": lineage} if lineage is not None else {}),
         },
         "dataset": {
             "train_sha256": fingerprint["train_sha256"],

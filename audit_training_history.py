@@ -27,6 +27,7 @@ def audit_history(
     demo: bool = False,
     stride: int | None = None,
     device: str = "cpu",
+    require_lineage: bool = False,
 ) -> dict:
     """Measure checkpoints on identical held-out targets and compare NLL.
 
@@ -42,6 +43,8 @@ def audit_history(
     history = []
     reference = None
     hashes = set()
+    prior_checkpoint = None
+    run_id = None
     for path in checkpoints:
         evidence = assess_checkpoint(
             checkpoint=path, data_dir=data_dir, tokenizer=tokenizer,
@@ -53,6 +56,18 @@ def audit_history(
         if cp["sha256"] in hashes:
             raise ValueError("Distinct checkpoint files must have distinct contents")
         hashes.add(cp["sha256"])
+        if require_lineage:
+            lineage = cp.get("lineage")
+            if lineage is None:
+                raise ValueError("Required checkpoint lineage metadata is missing")
+            if prior_checkpoint is None:
+                if lineage["parent_sha256"] is not None or lineage["parent_step"] is not None:
+                    raise ValueError("First checkpoint must be the lineage root")
+                run_id = lineage["run_id"]
+            elif (lineage["run_id"] != run_id or
+                  lineage["parent_sha256"] != prior_checkpoint["sha256"] or
+                  lineage["parent_step"] != prior_checkpoint["step"]):
+                raise ValueError("Checkpoint lineage has a broken parent SHA/step or run ID")
         comparable = {
             "mode": evidence["mode"],
             "dataset": evidence["dataset"],
@@ -85,6 +100,7 @@ def audit_history(
                 or not math.isclose(validation["total_nll"], nll * targets, rel_tol=1e-7, abs_tol=1e-6)):
             raise ValueError("Checkpoint validation metrics are inconsistent")
         previous = history[-1]["mean_nll"] if history else None
+        prior_checkpoint = cp
         history.append({
             "step": step,
             "checkpoint_sha256": cp["sha256"],
@@ -101,6 +117,8 @@ def audit_history(
         "schema_version": 1,
         "kind": "aetherion-validated-checkpoint-history",
         "mode": reference["mode"],
+        "lineage_check": "validated" if require_lineage else "not_requested",
+        "lineage_run_id": run_id,
         "comparable_metadata": reference,
         "history": history,
         "summary": {
@@ -115,8 +133,9 @@ def audit_history(
         },
         "limitations": (
             "Each saved checkpoint was independently evaluated on the same validation split. "
-            "Matching settings and increasing steps do not prove an uninterrupted training "
-            "lineage. Teacher-forced validation metrics alone do not establish real-world "
+            "Without an external trusted root, SHA-linked metadata is not authenticated proof "
+            "of optimizer continuity and can be forged alongside the weights. Matching settings "
+            "and increasing steps alone do not prove lineage. Teacher-forced metrics do not establish real-world "
             "assistant quality, test-set generalization, rights or dataset safety."
         ),
     }
@@ -133,6 +152,8 @@ def main() -> None:
     p.add_argument("--demo", action="store_true")
     p.add_argument("--stride", type=int)
     p.add_argument("--device", default="cpu")
+    p.add_argument("--require-lineage", action="store_true",
+                   help="Require all checkpoints from an M31 SHA-linked snapshot root")
     p.add_argument("--output", help="Create-only JSON output; never overwrite evidence")
     p.add_argument("--require-improvement", action="store_true",
                    help="Return exit status 2 if last NLL is not below first NLL")
@@ -143,6 +164,7 @@ def main() -> None:
             tokenizer=args.tokenizer, review=args.review,
             allow_licenses=args.allow_license, demo=args.demo,
             stride=args.stride, device=args.device,
+            require_lineage=args.require_lineage,
         )
         payload = json.dumps(result, indent=2, ensure_ascii=False, allow_nan=False) + "\n"
         if args.output:
