@@ -141,3 +141,77 @@ def test_receipt_is_atomic_and_exclusive(artifact, tmp_path):
     with pytest.raises(FileExistsError):
         write_completion_receipt(report, target)
     assert json.loads(target.read_text()) == report
+
+
+def stub_launcher(monkeypatch, tmp_path, calls):
+    import pilot_train
+    import sys
+    output = str(tmp_path / 'pilot.pt')
+    receipt = str(tmp_path / 'completion.json')
+    monkeypatch.setattr(pilot_train, 'validate_pilot_benchmark',
+                        lambda *a, **kw: {'device': 'cuda:0'})
+    monkeypatch.setattr(pilot_train, 'pilot_command',
+                        lambda *a, **kw: calls.append('corpus') or ['mock_train'])
+    monkeypatch.setattr(pilot_train, 'check_live_accelerator',
+                        lambda *a, **kw: calls.append('live') or {'result': 'mock'})
+    monkeypatch.setattr(pilot_train, 'check_checkpoint_destination',
+                        lambda *a, **kw: calls.append('storage') or {'result': 'mock'})
+    def run(*a, **kw):
+        calls.append('training')
+        assert (tmp_path / '.pilot.pt.aetherion-pilot.lock').is_dir()
+    monkeypatch.setattr(pilot_train.subprocess, 'run', run)
+    monkeypatch.setattr(sys, 'argv', [
+        'pilot_train.py', '--data-dir', 'synthetic', '--tokenizer', 'synthetic',
+        '--review', 'synthetic', '--allow-license', 'CC0-1.0',
+        '--steps', '2', '--schedule-steps', '4', '--device', 'cuda:0',
+        '--output', output, '--execute',
+        '--max-total-tokens', '8192', '--max-checkpoint-writes', '2',
+        '--min-free-checkpoint-gib', '0.001',
+        '--benchmark-report', 'synthetic.json', '--max-peak-reserved-gib', '8',
+        '--completion-report', receipt,
+    ])
+    return pilot_train, receipt
+
+
+def test_launcher_checks_final_checkpoint_under_lock_and_writes_receipt(monkeypatch, tmp_path):
+    calls = []
+    launcher, receipt = stub_launcher(monkeypatch, tmp_path, calls)
+    def verify(**kw):
+        calls.append('verify')
+        assert (tmp_path / '.pilot.pt.aetherion-pilot.lock').is_dir()
+        return {'result': 'synthetic_final_mock'}
+    monkeypatch.setattr(launcher, 'verify_pilot_completion', verify)
+    monkeypatch.setattr(launcher, 'write_completion_receipt',
+                        lambda r, p: calls.append('receipt') or write_completion_receipt(r, p))
+    launcher.main()
+    assert calls == ['corpus', 'live', 'storage', 'training', 'verify', 'receipt']
+    assert json.loads(Path(receipt).read_text())['result'] == 'synthetic_final_mock'
+    assert not (tmp_path / '.pilot.pt.aetherion-pilot.lock').exists()
+
+
+def test_bad_final_checkpoint_prevents_receipt_after_training(monkeypatch, tmp_path):
+    calls = []
+    launcher, receipt = stub_launcher(monkeypatch, tmp_path, calls)
+    def refuse(**kw):
+        calls.append('verify')
+        raise ValueError('Final checkpoint invalid')
+    monkeypatch.setattr(launcher, 'verify_pilot_completion', refuse)
+    monkeypatch.setattr(launcher, 'write_completion_receipt',
+                        lambda *a: calls.append('receipt'))
+    with pytest.raises(SystemExit) as exc:
+        launcher.main()
+    assert exc.value.code == 2
+    assert calls[-2:] == ['training', 'verify']
+    assert not Path(receipt).exists()
+    assert not (tmp_path / '.pilot.pt.aetherion-pilot.lock').exists()
+
+
+def test_existing_receipt_refuses_before_training(monkeypatch, tmp_path):
+    calls = []
+    launcher, receipt = stub_launcher(monkeypatch, tmp_path, calls)
+    Path(receipt).write_text('existing')
+    with pytest.raises(SystemExit) as exc:
+        launcher.main()
+    assert exc.value.code == 2
+    assert 'training' not in calls
+    assert Path(receipt).read_text() == 'existing'
