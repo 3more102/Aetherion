@@ -127,12 +127,18 @@ def evaluate_selected_test(
         raise ValueError("Test file changed during evaluation")
 
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "kind": "aetherion-validation-selected-test-evidence",
         "mode": audit["mode"],
         "selection": {
             "rule": "minimum_validation_mean_next_token_nll_first_tie",
             "candidate_count": len(history),
+            "candidates": [
+                {key: item[key] for key in (
+                    "step", "checkpoint_sha256", "evaluated_targets",
+                    "mean_nll", "perplexity")}
+                for item in history
+            ],
             "selected_step": chosen["step"],
             "selected_checkpoint_sha256": chosen["checkpoint_sha256"],
             "selected_validation_mean_nll": chosen["mean_nll"],

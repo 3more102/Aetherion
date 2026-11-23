@@ -160,6 +160,20 @@ After the initial training run, restart from an optimizer/RNG checkpoint with `-
 
 Run `python evaluate.py --checkpoint checkpoints/demo.pt` for the demo, or supply the original prepared data and tokenizer paths for a BPE checkpoint. See [validation evaluation](docs/VALIDATION_EVALUATION.md) for exact target accounting, perplexity and comparison limitations.
 
+
+## M33: Offline selected-test integrity audit
+
+M32 now emits schema-v2 selected-test evidence recording **every validation
+candidate** (checkpoint SHA-256, step, validation NLL/perplexity, target count)
+as well as the validation-selected winner. The new
+`verify_selected_test_report.py` checks input file hashes, the first-tie
+minimum-validation-NLL decision and internal test-metric arithmetic without
+loading weights or re-scoring the test split. It can write an exclusive,
+no-overwrite JSON integrity report. This **does not independently verify
+reported NLL, training, data rights or assistant ability**; unsigned
+artifacts may all be forged together. See
+[M33 offline integrity audit](docs/M33_OFFLINE_TEST_EVIDENCE_AUDIT.md).
+
 ## M32: Validation-selected, independently pinned test evaluation
 
 The new `assess_selected_test.py` re-evaluates retained checkpoints on the

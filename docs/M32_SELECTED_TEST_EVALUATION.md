@@ -93,3 +93,14 @@ These tests exercise actual tiny CPU training and independent evaluation,
 explicit test pinning, test split duplication, corrupted checkpoint
 detection, CLI no-overwrite behavior and production fail-closed gating.
 They are not a measured Aetherion-125M deployment.
+
+## M33 compatibility
+
+M32 reports now use `schema_version: 2` and add `selection.candidates` with
+all validation candidate steps, SHA-256 hashes, target counts, mean NLL and
+perplexity. This makes the validation-only selection rule independently
+checkable for internal consistency using the
+[M33 offline verifier](M33_OFFLINE_TEST_EVIDENCE_AUDIT.md). The verifier
+checks file hashes and report arithmetic, not the actual model scores.
+M32 schema-v1 reports remain historical evidence but cannot be audited by
+M33 without re-evaluating, which may violate a one-time test-use policy.
