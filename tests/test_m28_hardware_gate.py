@@ -116,6 +116,9 @@ def test_pilot_execute_requires_report_before_any_training(monkeypatch, tmp_path
                         called.append("pilot_preflight") or [sys.executable, "mock_train.py"])
     monkeypatch.setattr(pilot_train.subprocess, "run", lambda *a, **kw:
                         called.append("training_launcher"))
+    monkeypatch.setattr(pilot_train, "check_live_accelerator",
+                        lambda *args, **kwargs: called.append("live_gate") or
+                        {"result": "synthetic_test_only"})
     root_args = [
         "pilot_train.py", "--data-dir", "dummy", "--tokenizer", "dummy",
         "--review", "dummy", "--allow-license", "CC0-1.0", "--steps", "2",
@@ -141,7 +144,7 @@ def test_pilot_execute_requires_report_before_any_training(monkeypatch, tmp_path
 
     path.write_text(json.dumps(synthetic_report()))
     pilot_train.main()
-    assert called == ["pilot_preflight", "training_launcher"]
+    assert called == ["pilot_preflight", "live_gate", "training_launcher"]
 
 
 def test_pilot_dry_run_remains_available_without_benchmark(monkeypatch, capsys):
